@@ -109,73 +109,6 @@ if [ ! -d "udebug" ]; then
     git clone https://github.com/openwrt/udebug.git
 fi
 
-echo "Extracting udebug headers..."
-mkdir -p "$DEPS_DIR/install/include"
-cp udebug/udebug.h "$DEPS_DIR/install/include/"
-
-# Create minimal udebug implementation for linking
-echo "Creating minimal udebug implementation..."
-cat > "$DEPS_DIR/udebug_minimal.c" << 'EOF'
-#include "udebug.h"
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-
-/* Only implement functions that are NOT static inline in udebug.h */
-
-void udebug_init(struct udebug *ctx) {
-    memset(ctx, 0, sizeof(*ctx));
-}
-
-void udebug_auto_connect(struct udebug *ctx, const char *path) {
-    /* No-op for fuzzing */
-}
-
-void udebug_free(struct udebug *ctx) {
-    /* No-op for fuzzing */
-}
-
-int udebug_buf_init(struct udebug_buf *buf, size_t entries, size_t size) {
-    memset(buf, 0, sizeof(*buf));
-    return 0;
-}
-
-int udebug_buf_add(struct udebug *ctx, struct udebug_buf *buf, const struct udebug_buf_meta *meta) {
-    return 0;
-}
-
-void udebug_buf_free(struct udebug_buf *buf) {
-    /* No-op for fuzzing */
-}
-
-void *udebug_entry_append(struct udebug_buf *buf, const void *data, uint32_t len) {
-    static char dummy[1024];
-    return dummy;
-}
-
-int udebug_entry_printf(struct udebug_buf *buf, const char *fmt, ...) {
-    return 0;
-}
-
-int udebug_entry_vprintf(struct udebug_buf *buf, const char *fmt, va_list ap) {
-    return 0;
-}
-
-void udebug_entry_add(struct udebug_buf *buf) {
-    /* No-op for fuzzing */
-}
-
-void udebug_ubus_ring_init(struct udebug *ctx, struct udebug_ubus_ring *ring) {
-    /* No-op for fuzzing */
-}
-
-/* Match the exact signature from udebug.h */
-void udebug_ubus_apply_config(struct udebug *ud, struct udebug_ubus_ring *rings, int n,
-                              struct blob_attr *data, bool enabled) {
-    /* No-op for fuzzing */
-}
-EOF
-
 # Compile the minimal udebug implementation
 echo "Compiling minimal udebug..."
 $CC $CFLAGS -I"$DEPS_DIR/install/include" -c "$DEPS_DIR/udebug_minimal.c" -o "$DEPS_DIR/udebug_minimal.o"
@@ -234,6 +167,7 @@ echo "Compiling fuzzer..."
 $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 
 echo "Linking fuzzer statically..."
+# Link with full paths to static libraries to avoid linker issues
 $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     utils.o system-dummy.o tunnel.o handler.o \
     interface.o interface-ip.o interface-event.o \
@@ -242,7 +176,11 @@ $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
     $DEPS_DIR/udebug_minimal.o \
-    $LDFLAGS -static -lubox -luci -lnl-tiny -ljson-c -lubus \
+    $DEPS_DIR/install/lib/libubox.a \
+    $DEPS_DIR/install/lib/libuci.a \
+    $DEPS_DIR/install/lib/libnl-tiny.a \
+    $DEPS_DIR/install/lib/libubus.a \
+    $LDFLAGS -static -ljson-c \
     -o $OUT/netifd_fuzzer
 rm -f *.o
 
