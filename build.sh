@@ -196,7 +196,7 @@ $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     config.o device.o bridge.o veth.o vlan.o alias.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
-    $LDFLAGS -static -lubox -luci -lnl-tiny -ljson-c -lubus \
+    $LDFLAGS -static -lubox -luci -lnl-tiny -ljson-c -lubus -ludebug \
     -o $OUT/netifd_fuzzer
 rm -f *.o
 
