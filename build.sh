@@ -253,19 +253,21 @@ $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 
 echo "Linking fuzzer statically..."
 # Link with full paths to static libraries to avoid linker issues
+# Note: main.o must be included for symbols like debug_mask, netifd_log_message, etc.
+# Library order matters: libubus depends on libubox, so libubox should come after
 $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
-    utils.o system-dummy.o tunnel.o handler.o \
+    main.o utils.o system-dummy.o tunnel.o handler.o \
     interface.o interface-ip.o interface-event.o \
     iprule.o proto.o proto-static.o proto-shell.o \
     config.o device.o bridge.o veth.o vlan.o alias.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
     $DEPS_DIR/udebug_minimal.o \
-    $DEPS_DIR/install/lib/libubox.a \
+    $DEPS_DIR/install/lib/libubus.a \
     $DEPS_DIR/install/lib/libuci.a \
     $DEPS_DIR/install/lib/libnl-tiny.a \
-    $DEPS_DIR/install/lib/libubus.a \
-    $LDFLAGS -static -ljson-c \
+    $DEPS_DIR/install/lib/libubox.a \
+    $LDFLAGS -static -ljson-c -lm -lpthread \
     -o $OUT/netifd_fuzzer
 rm -f *.o
 
