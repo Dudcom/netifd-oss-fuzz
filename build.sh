@@ -107,6 +107,34 @@ make -j$(nproc)
 make install
 cd "$DEPS_DIR"
 
+if [ ! -d "udebug" ]; then
+    echo "Downloading udebug..."
+    git clone https://github.com/openwrt/udebug.git
+    cd udebug
+    rm -rf tests
+    # Create empty examples directory to avoid cmake errors
+    mkdir -p examples
+    cd ..
+fi
+
+cd udebug
+# Patch CMakeLists.txt to remove examples subdirectory reference
+if [ -f CMakeLists.txt ]; then
+    sed -i '/ADD_SUBDIRECTORY(examples)/d' CMakeLists.txt
+    sed -i '/add_subdirectory(examples)/d' CMakeLists.txt
+    sed -i '/ADD_SUBDIRECTORY.*examples/d' CMakeLists.txt
+    sed -i '/add_subdirectory.*examples/d' CMakeLists.txt
+fi
+mkdir -p build
+cd build
+cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
+         -DCMAKE_C_FLAGS="$CFLAGS" \
+         -DBUILD_TESTS=OFF \
+         -DBUILD_SHARED_LIBS=OFF
+make -j$(nproc)
+make install
+cd "$DEPS_DIR"
+
 cd ..
 
 : "${CFLAGS:=-O2 -fPIC}"
