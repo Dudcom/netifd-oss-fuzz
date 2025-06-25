@@ -211,6 +211,7 @@ cat > "$DEPS_DIR/netifd_minimal.c" << 'EOF'
 #include <fcntl.h>
 
 #include "netifd.h"
+#include "system.h"
 
 /* Global variables from main.c */
 unsigned int debug_mask = 0;
