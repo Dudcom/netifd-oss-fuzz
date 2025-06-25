@@ -1,7 +1,7 @@
 #!/bin/bash -eu
 
 apt-get update
-apt-get install -y build-essential cmake pkg-config git libjson-c-dev libblobmsg-json-dev
+apt-get install -y build-essential cmake pkg-config git libjson-c-dev
 
 DEPS_DIR="$PWD/deps"
 mkdir -p "$DEPS_DIR"
