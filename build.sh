@@ -16,6 +16,13 @@ if [ ! -d "libubox" ]; then
 fi
 
 cd libubox
+# Patch CMakeLists.txt to remove examples subdirectory reference
+if [ -f CMakeLists.txt ]; then
+    sed -i '/ADD_SUBDIRECTORY(examples)/d' CMakeLists.txt
+    sed -i '/add_subdirectory(examples)/d' CMakeLists.txt
+    sed -i '/ADD_SUBDIRECTORY.*examples/d' CMakeLists.txt
+    sed -i '/add_subdirectory.*examples/d' CMakeLists.txt
+fi
 mkdir -p build
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
@@ -77,6 +84,13 @@ if [ ! -d "ubus" ]; then
 fi
 
 cd ubus
+# Patch CMakeLists.txt to remove examples subdirectory reference
+if [ -f CMakeLists.txt ]; then
+    sed -i '/ADD_SUBDIRECTORY(examples)/d' CMakeLists.txt
+    sed -i '/add_subdirectory(examples)/d' CMakeLists.txt
+    sed -i '/ADD_SUBDIRECTORY.*examples/d' CMakeLists.txt
+    sed -i '/add_subdirectory.*examples/d' CMakeLists.txt
+fi
 mkdir -p build
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
