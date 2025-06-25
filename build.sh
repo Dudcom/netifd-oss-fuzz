@@ -225,7 +225,8 @@ $CC $CFLAGS -c bonding.c -o bonding.o
 $CC $CFLAGS -c vrf.c -o vrf.o
 
 echo "Compiling missing symbol weak alias file..."
-$CC $CFLAGS -c missing_syms.c -o missing_syms.o
+SRC_ROOT="$PWD/.."          # we are inside  $DEPS_DIR  right now
+$CC $CFLAGS -c "$SRC_ROOT/missing_syms.c" -o missing_syms.o
 
 echo "Compiling fuzzer..."
 $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
