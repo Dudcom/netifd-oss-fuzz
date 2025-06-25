@@ -198,128 +198,8 @@ EOF
 echo "Compiling minimal udebug..."
 $CC $CFLAGS -I"$DEPS_DIR/install/include" -c "$DEPS_DIR/udebug_minimal.c" -o "$DEPS_DIR/udebug_minimal.o"
 
-# Create a minimal main.c stub with the missing functions
-echo "Creating netifd minimal main implementation..."
-cat > "$DEPS_DIR/netifd_minimal.c" << 'EOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <syslog.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <fcntl.h>
-
-#include "netifd.h"
-#include "system.h"
-#include "device.h"
-#include "interface.h"
-
-/* Forward declarations for missing types */
-struct uci_section;
-struct extdev_bridge;
-struct udebug_ubus;
-
-/* Typedef for missing callback type */
-typedef bool (*blobmsg_json_format_t)(void *priv, struct blob_attr *attr);
-
-/* Global variables from main.c */
-unsigned int debug_mask = 0;
-const char *main_path = "/lib/netifd";
-const char *config_path = NULL;
-const char *resolv_conf = "/tmp/resolv.conf.d/resolv.conf.auto";
-char *hotplug_cmd_path = "/sbin/hotplug-call";
-
-/* Global variables from system.c */
-const char * const bonding_policy_str[__BONDING_MODE_MAX] = {
-    [BONDING_MODE_BALANCE_RR] = "balance-rr",
-    [BONDING_MODE_ACTIVE_BACKUP] = "active-backup",
-    [BONDING_MODE_BALANCE_XOR] = "balance-xor",
-    [BONDING_MODE_BROADCAST] = "broadcast",
-    [BONDING_MODE_8023AD] = "802.3ad",
-    [BONDING_MODE_BALANCE_TLB] = "balance-tlb",
-    [BONDING_MODE_BALANCE_ALB] = "balance-alb",
-};
-
-/* Logging functions for fuzzing - simplified versions */
-void netifd_udebug_printf(const char *format, ...) {
-    /* No-op for fuzzing */
-}
-
-void netifd_udebug_config(struct udebug_ubus *ctx, struct blob_attr *data, bool enabled) {
-    /* No-op for fuzzing */
-}
-
-void netifd_log_message(int priority, const char *format, ...) {
-    /* No-op for fuzzing */
-}
-
-/* usock function implementation - minimal version for fuzzing */
-int usock(int type, const char *host, const char *service) {
-    return socket(AF_UNIX, SOCK_STREAM, 0);
-}
-
-/* Process management functions - minimal versions for fuzzing */
-int netifd_start_process(const char **argv, char **env, struct netifd_process *proc) {
-    return -1; /* Fail gracefully for fuzzing */
-}
-
-void netifd_kill_process(struct netifd_process *proc) {
-    /* No-op for fuzzing */
-}
-
-/* System control functions */
-void netifd_restart(void) {
-    /* No-op for fuzzing */
-}
-
-int netifd_reload(void) {
-    return 0; /* Success for fuzzing */
-}
-
-/* Global udebug buffer - minimal implementation */
-struct udebug_buf udb_nl;
-
-/* Additional missing functions for fuzzing */
-
-/* System control functions */
-void system_fd_set_cloexec(int fd) {
-    /* No-op for fuzzing */
-}
-
-/* UCI blob attribute list - minimal implementations */
-const struct uci_blob_param_list tunnel_attr_list = { 0, NULL };
-
-/* Blobmsg JSON functions - minimal implementations */
-int blobmsg_format_json_with_cb(struct blob_attr *attr, bool list, blobmsg_json_format_t cb, void *priv, int indent) {
-    return 0; /* Success for fuzzing */
-}
-
-int blobmsg_add_json_from_file(struct blob_buf *b, const char *file) {
-    return 0; /* Success for fuzzing */
-}
-
-/* Udebug ubus functions - minimal implementations */
-int udebug_ubus_init(struct udebug_ubus *ctx, struct ubus_context *ubus, const char *service, void *config_cb) {
-    return 0; /* Success for fuzzing */
-}
-
-void udebug_ubus_free(struct udebug_ubus *ctx) {
-    /* No-op for fuzzing */
-}
-
-/* Note: The target functions for fuzzing are already compiled from their source files:
- * - config_parse_route() from config.c
- * - config_parse_interface() from config.c  
- * - proto_shell_parse_route_list() from proto-shell.c
- * - __bridge_reload() from extdev.c
- * We don't need to stub these - we want to test the real implementations!
- */
-EOF
-
-# Compile the minimal netifd implementation
-echo "Compiling minimal netifd..."
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/netifd_minimal.c" -o "$DEPS_DIR/netifd_minimal.o"
+# Note: Instead of creating stubs, we'll just include main.c which has all the real implementations
+# The linker will use our LLVMFuzzerTestOneInput as the entry point instead of main()
 
 cd ..
 
@@ -345,7 +225,9 @@ if [ -f "make_ethtool_modes_h.sh" ]; then
 fi
 
 echo "Compiling netifd source files..."
+$CC $CFLAGS -c main.c -o main.o
 $CC $CFLAGS -c utils.c -o utils.o
+$CC $CFLAGS -c system.c -o system.o
 $CC $CFLAGS -c system-dummy.c -o system-dummy.o
 $CC $CFLAGS -c tunnel.c -o tunnel.o
 $CC $CFLAGS -c handler.c -o handler.o
@@ -376,14 +258,13 @@ $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 echo "Linking fuzzer statically..."
 # Link with full paths to static libraries to avoid linker issues
 $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
-    utils.o system-dummy.o tunnel.o handler.o \
+    main.o utils.o system.o system-dummy.o tunnel.o handler.o \
     interface.o interface-ip.o interface-event.o \
     iprule.o proto.o proto-static.o proto-shell.o \
     config.o device.o bridge.o veth.o vlan.o alias.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
     $DEPS_DIR/udebug_minimal.o \
-    $DEPS_DIR/netifd_minimal.o \
     $DEPS_DIR/install/lib/libubox.a \
     $DEPS_DIR/install/lib/libuci.a \
     $DEPS_DIR/install/lib/libnl-tiny.a \
