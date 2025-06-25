@@ -157,7 +157,7 @@ config_parse_bridge_interface(struct uci_section *s, struct device_type *devtype
 	return 0;
 }
 
-static void
+void
 config_parse_interface(struct uci_section *s, bool alias)
 {
 	struct interface *iface;
