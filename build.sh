@@ -198,8 +198,49 @@ EOF
 echo "Compiling minimal udebug..."
 $CC $CFLAGS -I"$DEPS_DIR/install/include" -c "$DEPS_DIR/udebug_minimal.c" -o "$DEPS_DIR/udebug_minimal.o"
 
-# Note: Instead of creating stubs, we'll just include main.c which has all the real implementations
-# The linker will use our LLVMFuzzerTestOneInput as the entry point instead of main()
+# Create a main wrapper that excludes the main() function but keeps all global variables and functions
+echo "Creating main wrapper without main() function..."
+cat > "$DEPS_DIR/main_wrapper.c" << 'EOF'
+#define main disabled_main
+#include "../main.c"
+#undef main
+EOF
+
+# Compile the main wrapper
+echo "Compiling main wrapper..."
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/main_wrapper.c" -o "$DEPS_DIR/main_wrapper.o"
+
+# Remove the udebug_minimal since libubox already has udebug functions
+rm -f "$DEPS_DIR/udebug_minimal.o"
+
+# Create wrappers to expose static functions for fuzzing
+echo "Creating function wrappers to expose static functions..."
+
+# Wrapper for config.c static functions
+cat > "$DEPS_DIR/config_wrapper.c" << 'EOF'
+// This wrapper exposes the static functions from config.c for fuzzing
+#define static  // Remove static keyword
+#include "../config.c"
+EOF
+
+# Wrapper for proto-shell.c static functions  
+cat > "$DEPS_DIR/proto_shell_wrapper.c" << 'EOF'
+// This wrapper exposes the static functions from proto-shell.c for fuzzing
+#define static  // Remove static keyword
+#include "../proto-shell.c"
+EOF
+
+# Wrapper for extdev.c static functions
+cat > "$DEPS_DIR/extdev_wrapper.c" << 'EOF'
+// This wrapper exposes the static functions from extdev.c for fuzzing
+#define static  // Remove static keyword
+#include "../extdev.c"
+EOF
+
+echo "Compiling function wrappers..."
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/config_wrapper.c" -o "$DEPS_DIR/config_wrapper.o"
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/proto_shell_wrapper.c" -o "$DEPS_DIR/proto_shell_wrapper.o"
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/extdev_wrapper.c" -o "$DEPS_DIR/extdev_wrapper.o"
 
 cd ..
 
@@ -225,7 +266,7 @@ if [ -f "make_ethtool_modes_h.sh" ]; then
 fi
 
 echo "Compiling netifd source files..."
-$CC $CFLAGS -c main.c -o main.o
+# Note: main.c compiled via wrapper to exclude main() function
 $CC $CFLAGS -c utils.c -o utils.o
 $CC $CFLAGS -c system.c -o system.o
 $CC $CFLAGS -c system-dummy.c -o system-dummy.o
@@ -237,8 +278,8 @@ $CC $CFLAGS -c interface-event.c -o interface-event.o
 $CC $CFLAGS -c iprule.c -o iprule.o
 $CC $CFLAGS -c proto.c -o proto.o
 $CC $CFLAGS -c proto-static.c -o proto-static.o
-$CC $CFLAGS -c proto-shell.c -o proto-shell.o
-$CC $CFLAGS -c config.c -o config.o
+# Note: proto-shell.c compiled via wrapper to expose static functions
+# Note: config.c compiled via wrapper to expose static functions
 $CC $CFLAGS -c device.c -o device.o
 $CC $CFLAGS -c bridge.c -o bridge.o
 $CC $CFLAGS -c veth.c -o veth.o
@@ -248,7 +289,7 @@ $CC $CFLAGS -c macvlan.c -o macvlan.o
 $CC $CFLAGS -c ubus.c -o ubus.o
 $CC $CFLAGS -c vlandev.c -o vlandev.o
 $CC $CFLAGS -c wireless.c -o wireless.o
-$CC $CFLAGS -c extdev.c -o extdev.o
+# Note: extdev.c compiled via wrapper to expose static functions
 $CC $CFLAGS -c bonding.c -o bonding.o
 $CC $CFLAGS -c vrf.c -o vrf.o
 
@@ -258,13 +299,14 @@ $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 echo "Linking fuzzer statically..."
 # Link with full paths to static libraries to avoid linker issues
 $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
-    main.o utils.o system.o system-dummy.o tunnel.o handler.o \
+    $DEPS_DIR/main_wrapper.o utils.o system.o system-dummy.o tunnel.o handler.o \
     interface.o interface-ip.o interface-event.o \
-    iprule.o proto.o proto-static.o proto-shell.o \
-    config.o device.o bridge.o veth.o vlan.o alias.o \
-    macvlan.o ubus.o vlandev.o wireless.o extdev.o \
+    iprule.o proto.o proto-static.o \
+    $DEPS_DIR/proto_shell_wrapper.o \
+    $DEPS_DIR/config_wrapper.o device.o bridge.o veth.o vlan.o alias.o \
+    macvlan.o ubus.o vlandev.o wireless.o \
+    $DEPS_DIR/extdev_wrapper.o \
     bonding.o vrf.o \
-    $DEPS_DIR/udebug_minimal.o \
     $DEPS_DIR/install/lib/libubox.a \
     $DEPS_DIR/install/lib/libuci.a \
     $DEPS_DIR/install/lib/libnl-tiny.a \
