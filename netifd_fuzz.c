@@ -14,7 +14,6 @@
 #include "interface.h"
 #include "interface-ip.h"
 #include "proto.h"
-#include "proto-shell.h"
 #include "config.h"
 #include "device.h"
 #include "system.h"
