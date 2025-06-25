@@ -172,16 +172,7 @@ fi
 
 # Build real udebug library
 if [ ! -f "$DEPS_DIR/install/lib/libudebug.a" ]; then
-    echo "Building libudebug..."
-    cd "$DEPS_DIR/udebug"
-    mkdir -p build
-    cd build
-    cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
-             -DCMAKE_C_FLAGS="$CFLAGS" \
-             -DBUILD_SHARED_LIBS=OFF
-    make -j$(nproc)
-    make install
-    cd "$DEPS_DIR"
+    echo "Skipping libudebug build (depends on ucode, not needed for fuzzing)"
 fi
 
 : "${CFLAGS:=-O2 -fPIC}"
@@ -233,6 +224,9 @@ $CC $CFLAGS -c extdev.c -o extdev.o
 $CC $CFLAGS -c bonding.c -o bonding.o
 $CC $CFLAGS -c vrf.c -o vrf.o
 
+echo "Compiling missing symbol weak alias file..."
+$CC $CFLAGS -c missing_syms.c -o missing_syms.o
+
 echo "Compiling fuzzer..."
 $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 
@@ -246,11 +240,11 @@ $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     config.o device.o bridge.o veth.o vlan.o alias.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
+    missing_syms.o \
     $DEPS_DIR/install/lib/libubox.a \
     $DEPS_DIR/install/lib/libuci.a \
     $DEPS_DIR/install/lib/libnl-tiny.a \
     $DEPS_DIR/install/lib/libubus.a \
-    $DEPS_DIR/install/lib/libudebug.a \
     $DEPS_DIR/install/lib/libblobmsg_json.a \
     $LDFLAGS -ljson-c \
     -o $OUT/netifd_fuzzer

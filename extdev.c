@@ -96,7 +96,7 @@ struct extdev_bridge_member {
 };
 
 static void __bridge_config_init(struct extdev_bridge *ebr);
-static enum dev_change_type __bridge_reload(struct extdev_bridge *ebr, struct blob_attr *config);
+enum dev_change_type __bridge_reload(struct extdev_bridge *ebr, struct blob_attr *config);
 
 enum {
 	METHOD_CREATE,
@@ -799,7 +799,7 @@ __do_bridge_reload(struct extdev_bridge *ebr, struct blob_attr *config)
 	}
 }
 
-static enum dev_change_type
+enum dev_change_type
 __bridge_reload(struct extdev_bridge *ebr, struct blob_attr *config)
 {
 	int n_params = ebr->edev.dev.type->config_params->n_params;

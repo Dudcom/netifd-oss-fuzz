@@ -216,7 +216,7 @@ error:
 	free(iface);
 }
 
-static void
+void
 config_parse_route(struct uci_section *s, bool v6)
 {
 	void *route;

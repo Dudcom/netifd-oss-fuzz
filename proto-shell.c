@@ -396,7 +396,7 @@ proto_shell_free(struct interface_proto_state *proto)
 	free(state);
 }
 
-static void
+void
 proto_shell_parse_route_list(struct interface *iface, struct blob_attr *attr,
 			     bool v6)
 {
