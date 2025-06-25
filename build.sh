@@ -131,72 +131,7 @@ echo "Extracting udebug headers..."
 mkdir -p "$DEPS_DIR/install/include"
 cp udebug/udebug.h "$DEPS_DIR/install/include/"
 
-# Create minimal udebug implementation for linking
-echo "Creating minimal udebug implementation..."
-cat > "$DEPS_DIR/udebug_minimal.c" << 'EOF'
-#include "udebug.h"
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-
-/* Only implement functions that are NOT static inline in udebug.h */
-
-void udebug_init(struct udebug *ctx) {
-    memset(ctx, 0, sizeof(*ctx));
-}
-
-void udebug_auto_connect(struct udebug *ctx, const char *path) {
-    /* No-op for fuzzing */
-}
-
-void udebug_free(struct udebug *ctx) {
-    /* No-op for fuzzing */
-}
-
-int udebug_buf_init(struct udebug_buf *buf, size_t entries, size_t size) {
-    memset(buf, 0, sizeof(*buf));
-    return 0;
-}
-
-int udebug_buf_add(struct udebug *ctx, struct udebug_buf *buf, const struct udebug_buf_meta *meta) {
-    return 0;
-}
-
-void udebug_buf_free(struct udebug_buf *buf) {
-    /* No-op for fuzzing */
-}
-
-void *udebug_entry_append(struct udebug_buf *buf, const void *data, uint32_t len) {
-    static char dummy[1024];
-    return dummy;
-}
-
-int udebug_entry_printf(struct udebug_buf *buf, const char *fmt, ...) {
-    return 0;
-}
-
-int udebug_entry_vprintf(struct udebug_buf *buf, const char *fmt, va_list ap) {
-    return 0;
-}
-
-void udebug_entry_add(struct udebug_buf *buf) {
-    /* No-op for fuzzing */
-}
-
-void udebug_ubus_ring_init(struct udebug *ctx, struct udebug_ubus_ring *ring) {
-    /* No-op for fuzzing */
-}
-
-/* Match the exact signature from udebug.h */
-void udebug_ubus_apply_config(struct udebug *ud, struct udebug_ubus_ring *rings, int n,
-                              struct blob_attr *data, bool enabled) {
-    /* No-op for fuzzing */
-}
-EOF
-
-# Compile the minimal udebug implementation
-echo "Compiling minimal udebug..."
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -c "$DEPS_DIR/udebug_minimal.c" -o "$DEPS_DIR/udebug_minimal.o"
+# Note: Using real udebug from libubox instead of stubs
 
 # Create a main wrapper that excludes the main() function but keeps all global variables and functions
 echo "Creating main wrapper without main() function..."
@@ -210,49 +145,9 @@ EOF
 echo "Compiling main wrapper..."
 $CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/main_wrapper.c" -o "$DEPS_DIR/main_wrapper.o"
 
-# Create minimal stubs for missing library functions only
-echo "Creating minimal library function stubs..."
-cat > "$DEPS_DIR/lib_stubs.c" << 'EOF'
-#include <stdio.h>
-#include <stdbool.h>
+# Note: No stubs needed - using real libraries
 
-/* Forward declarations for types we don't have */
-struct blob_attr;
-struct blob_buf;
-struct udebug_ubus;
-struct ubus_context;
-
-/* Callback type definition */
-typedef bool (*blobmsg_json_format_t)(void *priv, struct blob_attr *attr);
-
-/* Minimal stubs for missing library functions only */
-int blobmsg_format_json_with_cb(struct blob_attr *attr, bool list, blobmsg_json_format_t cb, void *priv, int indent) {
-    return 0;
-}
-
-int blobmsg_add_json_from_file(struct blob_buf *b, const char *file) {
-    return 0;
-}
-
-void udebug_ubus_init(struct udebug_ubus *ctx, struct ubus_context *ubus, const char *service, void *config_cb) {
-    /* No-op */
-}
-
-void udebug_ubus_free(struct udebug_ubus *ctx) {
-    /* No-op */
-}
-
-void udebug_ubus_apply_config(void *ud, void *rings, int n, struct blob_attr *data, bool enabled) {
-    /* No-op */
-}
-
-void udebug_ubus_ring_init(void *ctx, void *ring) {
-    /* No-op */
-}
-EOF
-
-echo "Compiling library stubs..."
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/lib_stubs.c" -o "$DEPS_DIR/lib_stubs.o"
+cd ..
 
 # Make target functions non-static by editing source files directly
 echo "Making target functions non-static for fuzzing..."
@@ -261,7 +156,33 @@ sed -i 's/static void config_parse_interface(/void config_parse_interface(/g' co
 sed -i 's/static void proto_shell_parse_route_list(/void proto_shell_parse_route_list(/g' proto-shell.c
 sed -i 's/static enum dev_change_type __bridge_reload(/enum dev_change_type __bridge_reload(/g' extdev.c
 
-cd ..
+# Add missing libraries that netifd needs (from CMakeLists.txt)
+echo "Adding missing libraries..."
+
+# Build libblobmsg_json (part of libubox but separate library)
+if [ ! -f "$DEPS_DIR/install/lib/libblobmsg_json.a" ]; then
+    echo "Building libblobmsg_json..."
+    cd "$DEPS_DIR/libubox/build"
+    # libblobmsg_json should be built as part of libubox
+    if [ -f "libblobmsg_json.a" ]; then
+        cp libblobmsg_json.a "$DEPS_DIR/install/lib/"
+    fi
+    cd ..
+fi
+
+# Build real udebug library
+if [ ! -f "$DEPS_DIR/install/lib/libudebug.a" ]; then
+    echo "Building libudebug..."
+    cd "$DEPS_DIR/udebug"
+    mkdir -p build
+    cd build
+    cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
+             -DCMAKE_C_FLAGS="$CFLAGS" \
+             -DBUILD_SHARED_LIBS=OFF
+    make -j$(nproc)
+    make install
+    cd "$DEPS_DIR"
+fi
 
 : "${CFLAGS:=-O2 -fPIC}"
 : "${LDFLAGS:=}"
@@ -318,7 +239,7 @@ $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 echo "Linking fuzzer statically..."
 # Link with full paths to static libraries to avoid linker issues
 $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
-    $DEPS_DIR/main_wrapper.o $DEPS_DIR/lib_stubs.o \
+    $DEPS_DIR/main_wrapper.o \
     utils.o system.o system-dummy.o tunnel.o handler.o \
     interface.o interface-ip.o interface-event.o \
     iprule.o proto.o proto-static.o proto-shell.o \
@@ -329,6 +250,8 @@ $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     $DEPS_DIR/install/lib/libuci.a \
     $DEPS_DIR/install/lib/libnl-tiny.a \
     $DEPS_DIR/install/lib/libubus.a \
+    $DEPS_DIR/install/lib/libudebug.a \
+    $DEPS_DIR/install/lib/libblobmsg_json.a \
     $LDFLAGS -ljson-c \
     -o $OUT/netifd_fuzzer
 rm -f *.o
