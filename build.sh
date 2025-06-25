@@ -175,6 +175,9 @@ if [ ! -f "$DEPS_DIR/install/lib/libudebug.a" ]; then
     echo "Skipping libudebug build (depends on ucode, not needed for fuzzing)"
 fi
 
+echo "Compiling missing symbol weak alias file..."
+$CC $CFLAGS -c missing_syms.c -o missing_syms.o
+
 : "${CFLAGS:=-O2 -fPIC}"
 : "${LDFLAGS:=}"
 : "${PKG_CONFIG_PATH:=}"
@@ -223,10 +226,6 @@ $CC $CFLAGS -c wireless.c -o wireless.o
 $CC $CFLAGS -c extdev.c -o extdev.o
 $CC $CFLAGS -c bonding.c -o bonding.o
 $CC $CFLAGS -c vrf.c -o vrf.o
-
-echo "Compiling missing symbol weak alias file..."
-SRC_ROOT="$PWD/.."          # we are inside  $DEPS_DIR  right now
-$CC $CFLAGS -c "$SRC_ROOT/missing_syms.c" -o missing_syms.o
 
 echo "Compiling fuzzer..."
 $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
