@@ -27,6 +27,9 @@
 #include <libubox/blobmsg_json.h>
 #include <libubox/blob.h>
 
+// Forward declarations for incomplete types
+struct extdev_bridge;
+
 // Function prototypes for the functions we want to fuzz (high branch depth targets)
 extern void config_parse_route(struct uci_section *s, bool v6);
 extern void proto_shell_parse_route_list(struct interface *iface, struct blob_attr *attr, bool v6);
@@ -67,7 +70,6 @@ static struct interface *create_mock_interface(void) {
     
     // Initialize basic fields
     iface->name = "fuzz_interface";
-    iface->ifname = "fuzz0";
     iface->state = IFS_DOWN;
     iface->config_state = IFC_NORMAL;
     iface->enabled = true;
@@ -104,7 +106,9 @@ static struct uci_section *create_mock_uci_section(void) {
 
 // Create a mock bridge for bridge reload testing
 static struct extdev_bridge *create_mock_bridge(void) {
-    struct extdev_bridge *bridge = calloc(1, sizeof(struct extdev_bridge));
+    // Since extdev_bridge is incomplete, just allocate a small amount of memory
+    // This is a fuzzing mock - we don't need the full structure
+    struct extdev_bridge *bridge = calloc(1, 64); // Allocate some bytes
     if (!bridge) return NULL;
     
     // Initialize basic fields - this is a simplified mock
