@@ -272,7 +272,7 @@ EOF
 
 # Compile the minimal netifd implementation
 echo "Compiling minimal netifd..."
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$PWD" -c "$DEPS_DIR/netifd_minimal.c" -o "$DEPS_DIR/netifd_minimal.o"
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/netifd_minimal.c" -o "$DEPS_DIR/netifd_minimal.o"
 
 cd ..
 
