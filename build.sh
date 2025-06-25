@@ -51,6 +51,7 @@ cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
          -DCMAKE_C_FLAGS="$CFLAGS" \
          -DBUILD_LUA=OFF \
          -DBUILD_TESTS=OFF \
+         -DBUILD_STATIC=ON \
          -DBUILD_SHARED_LIBS=OFF
 make -j$(nproc)
 make install
@@ -98,6 +99,7 @@ cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
          -DBUILD_LUA=OFF \
          -DBUILD_EXAMPLES=OFF \
          -DBUILD_TESTS=OFF \
+         -DBUILD_STATIC=ON \
          -DBUILD_SHARED_LIBS=OFF
 make -j$(nproc)
 make install
