@@ -125,7 +125,8 @@ cat > "$DEPS_DIR/udebug_minimal.c" << 'EOF'
 #include <string.h>
 #include <stdarg.h>
 
-/* Minimal implementations for netifd fuzzing */
+/* Only implement functions that are NOT static inline in udebug.h */
+
 void udebug_init(struct udebug *ctx) {
     memset(ctx, 0, sizeof(*ctx));
 }
@@ -151,10 +152,6 @@ void udebug_buf_free(struct udebug_buf *buf) {
     /* No-op for fuzzing */
 }
 
-void udebug_entry_init(struct udebug_buf *buf) {
-    /* No-op for fuzzing */
-}
-
 void *udebug_entry_append(struct udebug_buf *buf, const void *data, uint32_t len) {
     static char dummy[1024];
     return dummy;
@@ -172,16 +169,13 @@ void udebug_entry_add(struct udebug_buf *buf) {
     /* No-op for fuzzing */
 }
 
-bool udebug_buf_valid(const struct udebug_buf *buf) {
-    return true; /* Always valid for fuzzing */
-}
-
 void udebug_ubus_ring_init(struct udebug *ctx, struct udebug_ubus_ring *ring) {
     /* No-op for fuzzing */
 }
 
-void udebug_ubus_apply_config(struct udebug *ctx, struct udebug_ubus_ring *rings, 
-                              unsigned int n_rings, struct blob_attr *data, bool enabled) {
+/* Match the exact signature from udebug.h */
+void udebug_ubus_apply_config(struct udebug *ud, struct udebug_ubus_ring *rings, int n,
+                              struct blob_attr *data, bool enabled) {
     /* No-op for fuzzing */
 }
 EOF
