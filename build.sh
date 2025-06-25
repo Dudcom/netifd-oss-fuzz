@@ -308,107 +308,13 @@ void udebug_ubus_free(struct udebug_ubus *ctx) {
     /* No-op for fuzzing */
 }
 
-/* Config parsing functions - these are the target functions for fuzzing */
-void config_parse_route(struct uci_section *s, bool v6) {
-    /* Minimal implementation for fuzzing - just exercise some basic logic */
-    if (!s) return;
-    
-    /* Simulate some configuration parsing logic */
-    const char *target = "192.168.1.0/24";
-    const char *gateway = "192.168.1.1";
-    const char *interface = "eth0";
-    
-    /* This would normally parse UCI configuration and create routes */
-    /* For fuzzing, we just do some basic operations */
-    if (v6) {
-        target = "2001:db8::/32";
-        gateway = "2001:db8::1";
-    }
-    
-    /* Simulate parsing different route attributes */
-    int metric = 100;
-    int mtu = 1500;
-    bool onlink = false;
-    
-    /* Exercise various code paths based on configuration */
-    if (s->type && strcmp(s->type, "route") == 0) {
-        /* Process route configuration */
-    }
-}
-
-void config_parse_interface(struct uci_section *s, bool alias) {
-    /* Minimal implementation for fuzzing */
-    if (!s) return;
-    
-    /* Simulate interface configuration parsing */
-    const char *proto = "static";
-    const char *ifname = "eth0";
-    bool enabled = true;
-    bool auto_start = true;
-    
-    /* Exercise different code paths */
-    if (alias) {
-        /* Handle alias interface */
-        proto = "none";
-    }
-    
-    /* Simulate various interface options parsing */
-    int metric = 0;
-    int mtu = 1500;
-    bool force_link = false;
-    
-    /* Exercise configuration validation */
-    if (s->type && strcmp(s->type, "interface") == 0) {
-        /* Process interface configuration */
-    }
-}
-
-/* Bridge reload function - target for fuzzing */
-enum dev_change_type __bridge_reload(struct extdev_bridge *ebr, struct blob_attr *config) {
-    /* Minimal implementation for fuzzing */
-    if (!ebr || !config) {
-        return DEV_CONFIG_RECREATE;
-    }
-    
-    /* Simulate bridge configuration reload logic */
-    /* This would normally parse bridge configuration and apply changes */
-    
-    /* Exercise different return paths */
-    size_t config_len = blob_len(config);
-    
-    if (config_len == 0) {
-        return DEV_CONFIG_NO_CHANGE;
-    } else if (config_len < 100) {
-        return DEV_CONFIG_RESTART;
-    } else {
-        return DEV_CONFIG_RECREATE;
-    }
-}
-
-/* Proto shell route parsing - target for fuzzing */
-void proto_shell_parse_route_list(struct interface *iface, struct blob_attr *attr, bool v6) {
-    /* Minimal implementation for fuzzing */
-    if (!iface || !attr) return;
-    
-    /* Simulate route list parsing */
-    size_t attr_len = blob_len(attr);
-    const char *data = blob_data(attr);
-    
-    /* Exercise different parsing paths */
-    if (v6) {
-        /* Parse IPv6 routes */
-        /* Simulate parsing IPv6 route attributes */
-    } else {
-        /* Parse IPv4 routes */
-        /* Simulate parsing IPv4 route attributes */
-    }
-    
-    /* Simulate route validation and installation */
-    for (size_t i = 0; i < attr_len && i < 1000; i += 10) {
-        /* Process route entries */
-        if (data[i] == 0) break;
-    }
-}
+/* Note: The target functions for fuzzing are already compiled from their source files:
+ * - config_parse_route() from config.c
+ * - config_parse_interface() from config.c  
+ * - proto_shell_parse_route_list() from proto-shell.c
+ * - __bridge_reload() from extdev.c
+ * We don't need to stub these - we want to test the real implementations!
+ */
 EOF
 
 # Compile the minimal netifd implementation
