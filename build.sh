@@ -107,33 +107,30 @@ make -j$(nproc)
 make install
 cd "$DEPS_DIR"
 
-if [ ! -d "udebug" ]; then
-    echo "Downloading udebug..."
-    git clone https://github.com/openwrt/udebug.git
-    cd udebug
-    rm -rf tests
-    # Create empty examples directory to avoid cmake errors
-    mkdir -p examples
-    cd ..
-fi
+# Create minimal udebug header stub for netifd compilation
+echo "Creating minimal udebug header..."
+mkdir -p "$DEPS_DIR/install/include"
+cat > "$DEPS_DIR/install/include/udebug.h" << 'EOF'
+#ifndef __UDEBUG_H
+#define __UDEBUG_H
 
-cd udebug
-# Patch CMakeLists.txt to remove examples subdirectory reference
-if [ -f CMakeLists.txt ]; then
-    sed -i '/ADD_SUBDIRECTORY(examples)/d' CMakeLists.txt
-    sed -i '/add_subdirectory(examples)/d' CMakeLists.txt
-    sed -i '/ADD_SUBDIRECTORY.*examples/d' CMakeLists.txt
-    sed -i '/add_subdirectory.*examples/d' CMakeLists.txt
-fi
-mkdir -p build
-cd build
-cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
-         -DCMAKE_C_FLAGS="$CFLAGS" \
-         -DBUILD_TESTS=OFF \
-         -DBUILD_SHARED_LIBS=OFF
-make -j$(nproc)
-make install
-cd "$DEPS_DIR"
+#include <stdint.h>
+#include <stdbool.h>
+
+/* Minimal udebug stub for netifd compilation */
+struct udebug_buf {
+    void *data;
+    size_t size;
+};
+
+struct udebug_ubus;
+
+/* Stub functions */
+static inline void netifd_udebug_printf(const char *format, ...) { }
+static inline void netifd_udebug_config(struct udebug_ubus *ctx, void *data, bool enabled) { }
+
+#endif
+EOF
 
 cd ..
 
@@ -196,7 +193,7 @@ $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     config.o device.o bridge.o veth.o vlan.o alias.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
-    $LDFLAGS -static -lubox -luci -lnl-tiny -ljson-c -lubus -ludebug \
+    $LDFLAGS -static -lubox -luci -lnl-tiny -ljson-c -lubus \
     -o $OUT/netifd_fuzzer
 rm -f *.o
 
