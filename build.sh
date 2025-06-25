@@ -107,30 +107,88 @@ make -j$(nproc)
 make install
 cd "$DEPS_DIR"
 
-# Create minimal udebug header stub for netifd compilation
-echo "Creating minimal udebug header..."
+# Download and extract proper udebug headers
+if [ ! -d "udebug" ]; then
+    echo "Downloading udebug for headers..."
+    git clone https://github.com/openwrt/udebug.git
+fi
+
+echo "Extracting udebug headers..."
 mkdir -p "$DEPS_DIR/install/include"
-cat > "$DEPS_DIR/install/include/udebug.h" << 'EOF'
-#ifndef __UDEBUG_H
-#define __UDEBUG_H
+cp udebug/udebug.h "$DEPS_DIR/install/include/"
 
-#include <stdint.h>
-#include <stdbool.h>
+# Create minimal udebug implementation for linking
+echo "Creating minimal udebug implementation..."
+cat > "$DEPS_DIR/udebug_minimal.c" << 'EOF'
+#include "udebug.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
 
-/* Minimal udebug stub for netifd compilation */
-struct udebug_buf {
-    void *data;
-    size_t size;
-};
+/* Minimal implementations for netifd fuzzing */
+void udebug_init(struct udebug *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+}
 
-struct udebug_ubus;
+void udebug_auto_connect(struct udebug *ctx, const char *path) {
+    /* No-op for fuzzing */
+}
 
-/* Stub functions */
-static inline void netifd_udebug_printf(const char *format, ...) { }
-static inline void netifd_udebug_config(struct udebug_ubus *ctx, void *data, bool enabled) { }
+void udebug_free(struct udebug *ctx) {
+    /* No-op for fuzzing */
+}
 
-#endif
+int udebug_buf_init(struct udebug_buf *buf, size_t entries, size_t size) {
+    memset(buf, 0, sizeof(*buf));
+    return 0;
+}
+
+int udebug_buf_add(struct udebug *ctx, struct udebug_buf *buf, const struct udebug_buf_meta *meta) {
+    return 0;
+}
+
+void udebug_buf_free(struct udebug_buf *buf) {
+    /* No-op for fuzzing */
+}
+
+void udebug_entry_init(struct udebug_buf *buf) {
+    /* No-op for fuzzing */
+}
+
+void *udebug_entry_append(struct udebug_buf *buf, const void *data, uint32_t len) {
+    static char dummy[1024];
+    return dummy;
+}
+
+int udebug_entry_printf(struct udebug_buf *buf, const char *fmt, ...) {
+    return 0;
+}
+
+int udebug_entry_vprintf(struct udebug_buf *buf, const char *fmt, va_list ap) {
+    return 0;
+}
+
+void udebug_entry_add(struct udebug_buf *buf) {
+    /* No-op for fuzzing */
+}
+
+bool udebug_buf_valid(const struct udebug_buf *buf) {
+    return true; /* Always valid for fuzzing */
+}
+
+void udebug_ubus_ring_init(struct udebug *ctx, struct udebug_ubus_ring *ring) {
+    /* No-op for fuzzing */
+}
+
+void udebug_ubus_apply_config(struct udebug *ctx, struct udebug_ubus_ring *rings, 
+                              unsigned int n_rings, struct blob_attr *data, bool enabled) {
+    /* No-op for fuzzing */
+}
 EOF
+
+# Compile the minimal udebug implementation
+echo "Compiling minimal udebug..."
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -c "$DEPS_DIR/udebug_minimal.c" -o "$DEPS_DIR/udebug_minimal.o"
 
 cd ..
 
@@ -193,6 +251,7 @@ $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
     config.o device.o bridge.o veth.o vlan.o alias.o \
     macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
+    $DEPS_DIR/udebug_minimal.o \
     $LDFLAGS -static -lubox -luci -lnl-tiny -ljson-c -lubus \
     -o $OUT/netifd_fuzzer
 rm -f *.o
