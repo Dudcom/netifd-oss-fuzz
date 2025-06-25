@@ -12,10 +12,19 @@ if [ ! -d "libubox" ]; then
     git clone https://github.com/openwrt/libubox.git
     cd libubox
     rm -rf tests examples
+    # Create empty examples directory to avoid cmake errors
+    mkdir -p examples
     cd ..
 fi
 
 cd libubox
+# Patch CMakeLists.txt to remove examples subdirectory reference
+if [ -f CMakeLists.txt ]; then
+    sed -i '/ADD_SUBDIRECTORY(examples)/d' CMakeLists.txt
+    sed -i '/add_subdirectory(examples)/d' CMakeLists.txt
+    sed -i '/ADD_SUBDIRECTORY.*examples/d' CMakeLists.txt
+    sed -i '/add_subdirectory.*examples/d' CMakeLists.txt
+fi
 mkdir -p build
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
@@ -73,10 +82,19 @@ if [ ! -d "ubus" ]; then
     git clone https://git.openwrt.org/project/ubus.git
     cd ubus
     rm -rf tests examples
+    # Create empty examples directory to avoid cmake errors
+    mkdir -p examples
     cd ..
 fi
 
 cd ubus
+# Patch CMakeLists.txt to remove examples subdirectory reference
+if [ -f CMakeLists.txt ]; then
+    sed -i '/ADD_SUBDIRECTORY(examples)/d' CMakeLists.txt
+    sed -i '/add_subdirectory(examples)/d' CMakeLists.txt
+    sed -i '/ADD_SUBDIRECTORY.*examples/d' CMakeLists.txt
+    sed -i '/add_subdirectory.*examples/d' CMakeLists.txt
+fi
 mkdir -p build
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
