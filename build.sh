@@ -52,9 +52,17 @@ cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
          -DBUILD_LUA=OFF \
          -DBUILD_TESTS=OFF \
          -DBUILD_STATIC=ON \
-         -DBUILD_SHARED_LIBS=OFF
+         -DBUILD_SHARED_LIBS=OFF \
+         -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 make -j$(nproc)
 make install
+
+# Check if static library was created, if not create it manually
+if [ ! -f "$DEPS_DIR/install/lib/libuci.a" ]; then
+    echo "Creating static library for libuci..."
+    ar rcs "$DEPS_DIR/install/lib/libuci.a" CMakeFiles/uci.dir/*.o
+fi
+
 cd "$DEPS_DIR"
 
 if [ ! -d "libnl-tiny" ]; then
@@ -100,9 +108,17 @@ cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
          -DBUILD_EXAMPLES=OFF \
          -DBUILD_TESTS=OFF \
          -DBUILD_STATIC=ON \
-         -DBUILD_SHARED_LIBS=OFF
+         -DBUILD_SHARED_LIBS=OFF \
+         -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 make -j$(nproc)
 make install
+
+# Check if static library was created, if not create it manually
+if [ ! -f "$DEPS_DIR/install/lib/libubus.a" ]; then
+    echo "Creating static library for libubus..."
+    ar rcs "$DEPS_DIR/install/lib/libubus.a" CMakeFiles/ubus.dir/*.o
+fi
+
 cd "$DEPS_DIR"
 
 # Download and extract proper udebug headers
