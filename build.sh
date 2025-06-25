@@ -1,7 +1,7 @@
 #!/bin/bash -eu
 
 apt-get update
-apt-get install -y build-essential cmake pkg-config git libjson-c-dev
+apt-get install -y build-essential cmake pkg-config git libjson-c-dev libblobmsg-json-dev
 
 DEPS_DIR="$PWD/deps"
 mkdir -p "$DEPS_DIR"
@@ -210,37 +210,56 @@ EOF
 echo "Compiling main wrapper..."
 $CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/main_wrapper.c" -o "$DEPS_DIR/main_wrapper.o"
 
-# Remove the udebug_minimal since libubox already has udebug functions
-rm -f "$DEPS_DIR/udebug_minimal.o"
+# Create minimal stubs for missing library functions only
+echo "Creating minimal library function stubs..."
+cat > "$DEPS_DIR/lib_stubs.c" << 'EOF'
+#include <stdio.h>
+#include <stdbool.h>
 
-# Create wrappers to expose static functions for fuzzing
-echo "Creating function wrappers to expose static functions..."
+/* Forward declarations for types we don't have */
+struct blob_attr;
+struct blob_buf;
+struct udebug_ubus;
+struct ubus_context;
 
-# Wrapper for config.c static functions
-cat > "$DEPS_DIR/config_wrapper.c" << 'EOF'
-// This wrapper exposes the static functions from config.c for fuzzing
-#define static  // Remove static keyword
-#include "../config.c"
+/* Callback type definition */
+typedef bool (*blobmsg_json_format_t)(void *priv, struct blob_attr *attr);
+
+/* Minimal stubs for missing library functions only */
+int blobmsg_format_json_with_cb(struct blob_attr *attr, bool list, blobmsg_json_format_t cb, void *priv, int indent) {
+    return 0;
+}
+
+int blobmsg_add_json_from_file(struct blob_buf *b, const char *file) {
+    return 0;
+}
+
+void udebug_ubus_init(struct udebug_ubus *ctx, struct ubus_context *ubus, const char *service, void *config_cb) {
+    /* No-op */
+}
+
+void udebug_ubus_free(struct udebug_ubus *ctx) {
+    /* No-op */
+}
+
+void udebug_ubus_apply_config(void *ud, void *rings, int n, struct blob_attr *data, bool enabled) {
+    /* No-op */
+}
+
+void udebug_ubus_ring_init(void *ctx, void *ring) {
+    /* No-op */
+}
 EOF
 
-# Wrapper for proto-shell.c static functions  
-cat > "$DEPS_DIR/proto_shell_wrapper.c" << 'EOF'
-// This wrapper exposes the static functions from proto-shell.c for fuzzing
-#define static  // Remove static keyword
-#include "../proto-shell.c"
-EOF
+echo "Compiling library stubs..."
+$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/lib_stubs.c" -o "$DEPS_DIR/lib_stubs.o"
 
-# Wrapper for extdev.c static functions
-cat > "$DEPS_DIR/extdev_wrapper.c" << 'EOF'
-// This wrapper exposes the static functions from extdev.c for fuzzing
-#define static  // Remove static keyword
-#include "../extdev.c"
-EOF
-
-echo "Compiling function wrappers..."
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/config_wrapper.c" -o "$DEPS_DIR/config_wrapper.o"
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/proto_shell_wrapper.c" -o "$DEPS_DIR/proto_shell_wrapper.o"
-$CC $CFLAGS -I"$DEPS_DIR/install/include" -I"$DEPS_DIR/.." -c "$DEPS_DIR/extdev_wrapper.c" -o "$DEPS_DIR/extdev_wrapper.o"
+# Make target functions non-static by editing source files directly
+echo "Making target functions non-static for fuzzing..."
+sed -i 's/static void config_parse_route(/void config_parse_route(/g' config.c
+sed -i 's/static void config_parse_interface(/void config_parse_interface(/g' config.c  
+sed -i 's/static void proto_shell_parse_route_list(/void proto_shell_parse_route_list(/g' proto-shell.c
+sed -i 's/static enum dev_change_type __bridge_reload(/enum dev_change_type __bridge_reload(/g' extdev.c
 
 cd ..
 
@@ -278,8 +297,8 @@ $CC $CFLAGS -c interface-event.c -o interface-event.o
 $CC $CFLAGS -c iprule.c -o iprule.o
 $CC $CFLAGS -c proto.c -o proto.o
 $CC $CFLAGS -c proto-static.c -o proto-static.o
-# Note: proto-shell.c compiled via wrapper to expose static functions
-# Note: config.c compiled via wrapper to expose static functions
+$CC $CFLAGS -c proto-shell.c -o proto-shell.o
+$CC $CFLAGS -c config.c -o config.o
 $CC $CFLAGS -c device.c -o device.o
 $CC $CFLAGS -c bridge.c -o bridge.o
 $CC $CFLAGS -c veth.c -o veth.o
@@ -289,7 +308,7 @@ $CC $CFLAGS -c macvlan.c -o macvlan.o
 $CC $CFLAGS -c ubus.c -o ubus.o
 $CC $CFLAGS -c vlandev.c -o vlandev.o
 $CC $CFLAGS -c wireless.c -o wireless.o
-# Note: extdev.c compiled via wrapper to expose static functions
+$CC $CFLAGS -c extdev.c -o extdev.o
 $CC $CFLAGS -c bonding.c -o bonding.o
 $CC $CFLAGS -c vrf.c -o vrf.o
 
@@ -299,13 +318,12 @@ $CC $CFLAGS -c netifd_fuzz.c -o netifd_fuzz.o
 echo "Linking fuzzer statically..."
 # Link with full paths to static libraries to avoid linker issues
 $CC $CFLAGS $LIB_FUZZING_ENGINE netifd_fuzz.o \
-    $DEPS_DIR/main_wrapper.o utils.o system.o system-dummy.o tunnel.o handler.o \
+    $DEPS_DIR/main_wrapper.o $DEPS_DIR/lib_stubs.o \
+    utils.o system.o system-dummy.o tunnel.o handler.o \
     interface.o interface-ip.o interface-event.o \
-    iprule.o proto.o proto-static.o \
-    $DEPS_DIR/proto_shell_wrapper.o \
-    $DEPS_DIR/config_wrapper.o device.o bridge.o veth.o vlan.o alias.o \
-    macvlan.o ubus.o vlandev.o wireless.o \
-    $DEPS_DIR/extdev_wrapper.o \
+    iprule.o proto.o proto-static.o proto-shell.o \
+    config.o device.o bridge.o veth.o vlan.o alias.o \
+    macvlan.o ubus.o vlandev.o wireless.o extdev.o \
     bonding.o vrf.o \
     $DEPS_DIR/install/lib/libubox.a \
     $DEPS_DIR/install/lib/libuci.a \
