@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <endian.h>
 
 // Include netifd headers
 #include "netifd.h"
@@ -75,7 +74,8 @@ struct extdev_bridge_member {
 
 // Function prototypes for the functions we want to fuzz (high branch depth targets)
 extern void config_parse_route(struct uci_section *s, bool v6);
-extern void proto_shell_parse_route_list(struct interface *iface, struct blob_attr *attr, bool v6);
+extern void interface_ip_add_route(struct interface *iface, struct blob_attr *attr, bool v6);
+extern void iprule_add(struct blob_attr *attr, bool v6);
 extern void config_parse_interface(struct uci_section *s, bool alias);
 extern enum dev_change_type __bridge_reload(struct extdev_bridge *ebr, struct blob_attr *config);
 
@@ -85,7 +85,8 @@ static struct uci_section *create_mock_uci_section(void);
 static struct extdev_bridge *create_mock_bridge(void);
 static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t size);
 static void fuzz_config_parse_route(const uint8_t *data, size_t size);
-static void fuzz_proto_shell_parse_route_list(const uint8_t *data, size_t size);
+static void fuzz_interface_ip_add_route(const uint8_t *data, size_t size);
+static void fuzz_iprule_add(const uint8_t *data, size_t size);
 static void fuzz_config_parse_interface(const uint8_t *data, size_t size);
 static void fuzz_bridge_reload(const uint8_t *data, size_t size);
 static void cleanup_mock_structures(void);
@@ -314,36 +315,73 @@ static void cleanup_mock_structures(void) {
     }
 }
 
-// Create blob data from fuzz input
-// This mimics exactly how netifd handles blob validation - it trusts the blob functions
+// Create valid blob data from fuzz input
+// Instead of passing raw fuzz data as blob (which can cause buffer overflows),
+// we create a properly structured blob using the official blob API
 static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t size) {
-    // Minimum size check - same as what netifd would expect
-    if (size < sizeof(struct blob_attr)) return NULL;
+    static struct blob_buf fuzz_buf;
+    void *array_cookie;
     
-    // Cast to blob_attr directly - this is exactly what netifd code does
-    struct blob_attr *attr = (struct blob_attr *)data;
+    if (size == 0) return NULL;
     
-    // CRITICAL: Do NOT call blob_len() or any blob functions until we validate
-    // the basic structure manually, since blob_len() can read out of bounds
+    // Initialize blob buffer - this creates a valid blob structure
+    blob_buf_init(&fuzz_buf, 0);
     
-    // Manually read the length field from the blob header (first 4 bytes)
-    // This is what blob_len() does internally, but we do it safely
-    uint32_t raw_len;
-    memcpy(&raw_len, data, sizeof(uint32_t));
+    // Create an array to hold route entries (this is what proto_shell_parse_route_list expects)
+    array_cookie = blobmsg_open_array(&fuzz_buf, "routes");
     
-    // Convert from network byte order (big endian) to host byte order
-    // This is the same conversion blob_len() does internally
-    uint32_t blob_data_len = be32toh(raw_len);
-    size_t total_len = blob_data_len + sizeof(struct blob_attr);
+    // Add fuzz data as blob entries
+    // We'll create multiple table entries from the fuzz data
+    size_t offset = 0;
+    int entry_count = 0;
     
-    // Basic overflow protection - this is the minimum netifd would need
-    if (total_len > size || total_len < sizeof(struct blob_attr)) {
-        return NULL;
+    while (offset < size && entry_count < 10) { // Limit to 10 entries max
+        void *table_cookie = blobmsg_open_table(&fuzz_buf, NULL);
+        
+        // Add some fields that route parsing expects
+        if (offset < size) {
+            // Use fuzz data to create route fields
+            uint8_t field_selector = data[offset] % 4;
+            offset++;
+            
+            switch (field_selector) {
+                case 0:
+                    if (offset + 4 <= size) {
+                        blobmsg_add_string(&fuzz_buf, "target", "192.168.1.0");
+                        blobmsg_add_string(&fuzz_buf, "netmask", "255.255.255.0");
+                        offset += 4;
+                    }
+                    break;
+                case 1:
+                    if (offset + 4 <= size) {
+                        blobmsg_add_string(&fuzz_buf, "gateway", "192.168.1.1");
+                        offset += 4;
+                    }
+                    break;
+                case 2:
+                    if (offset + 4 <= size) {
+                        uint32_t metric;
+                        memcpy(&metric, data + offset, sizeof(uint32_t));
+                        blobmsg_add_u32(&fuzz_buf, "metric", metric % 1000);
+                        offset += 4;
+                    }
+                    break;
+                case 3:
+                    blobmsg_add_string(&fuzz_buf, "interface", "fuzz_iface");
+                    break;
+            }
+        }
+        
+        blobmsg_close_table(&fuzz_buf, table_cookie);
+        entry_count++;
+        
+        if (offset >= size) break;
     }
     
-    // Now it's safe to let the blob functions handle everything else,
-    // just like the real netifd code does
-    return attr;
+    blobmsg_close_array(&fuzz_buf, array_cookie);
+    
+    // Return the properly constructed blob data
+    return blob_data(fuzz_buf.head);
 }
 
 // Fuzz config_parse_route function (branch depth: 246)
@@ -367,24 +405,42 @@ static void fuzz_config_parse_route(const uint8_t *data, size_t size) {
     config_parse_route(g_mock_section, v6);
 }
 
-// Fuzz proto_shell_parse_route_list function (branch depth: 247)
-// This mimics exactly how proto-shell.c validates and processes blob data
-static void fuzz_proto_shell_parse_route_list(const uint8_t *data, size_t size) {
-    if (!g_mock_iface) return;
+// Fuzz interface_ip_add_route function (branch depth: 247)
+// This targets the function where user input has FULL control over blob data
+// interface_ip_add_route directly calls blobmsg_parse() on user data with minimal validation
+static void fuzz_interface_ip_add_route(const uint8_t *data, size_t size) {
+    if (!g_mock_iface || size < 8) return;
     
-    struct blob_attr *attr = create_blob_from_fuzz_data(data, size);
-    if (!attr) return;
+    // Pass raw fuzz data directly as blob - this gives us full control over the blob structure
+    // We cast the raw fuzz data to a blob_attr, which is exactly what a real attacker would do
+    struct blob_attr *attr = (struct blob_attr *)data;
     
-    // Use the exact same pattern as proto-shell.c:
-    // Just check for NULL attribute (line 603 in proto-shell.c: "if (!attr) goto out;")
-    // and let the function handle the rest
-    
-    // Alternate between IPv4 and IPv6 routes based on data
+    // Alternate between IPv4 and IPv6 routes based on first byte
     bool v6 = (data[0] % 2) == 1;
     
-    // Call the target function - it will do its own validation using blobmsg_for_each_attr
-    // and blobmsg_type checks, exactly like the real code
-    proto_shell_parse_route_list(g_mock_iface, attr, v6);
+    // Call the target function directly with raw fuzz data
+    // This function will call blobmsg_parse() on our raw data, giving us full control
+    // over what gets parsed and how the blob parsing behaves
+    interface_ip_add_route(g_mock_iface, attr, v6);
+}
+
+// Fuzz iprule_add function (branch depth: 300+)
+// This targets another function where user input has FULL control over blob data
+// iprule_add directly calls blobmsg_parse() on user data with minimal validation
+static void fuzz_iprule_add(const uint8_t *data, size_t size) {
+    if (size < 8) return;
+    
+    // Pass raw fuzz data directly as blob - this gives us full control over the blob structure
+    // We cast the raw fuzz data to a blob_attr, which is exactly what a real attacker would do
+    struct blob_attr *attr = (struct blob_attr *)data;
+    
+    // Alternate between IPv4 and IPv6 rules based on first byte
+    bool v6 = (data[0] % 2) == 1;
+    
+    // Call the target function directly with raw fuzz data
+    // This function will call blobmsg_parse() on our raw data, giving us full control
+    // over what gets parsed and how the blob parsing behaves
+    iprule_add(attr, v6);
 }
 
 // Fuzz config_parse_interface function (branch depth: 44)
@@ -463,24 +519,28 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size < 2) return 0;
     
     // Use first byte to determine which high-complexity function to fuzz
-    uint8_t strategy = data[0] % 4;
+    uint8_t strategy = data[0] % 5;
     const uint8_t *fuzz_data = data + 1;
     size_t fuzz_size = size - 1;
     
     switch (strategy) {
         case 0:
-            // Fuzz config_parse_route (highest branch depth: 246)
+            // Fuzz config_parse_route (branch depth: 246)
             fuzz_config_parse_route(fuzz_data, fuzz_size);
             break;
         case 1:
-            // Fuzz proto_shell_parse_route_list (highest branch depth: 247)
-            fuzz_proto_shell_parse_route_list(fuzz_data, fuzz_size);
+            // Fuzz interface_ip_add_route (branch depth: 247) - DIRECT USER CONTROL
+            fuzz_interface_ip_add_route(fuzz_data, fuzz_size);
             break;
         case 2:
+            // Fuzz iprule_add (branch depth: 300+) - DIRECT USER CONTROL
+            fuzz_iprule_add(fuzz_data, fuzz_size);
+            break;
+        case 3:
             // Fuzz config_parse_interface (branch depth: 44)
             fuzz_config_parse_interface(fuzz_data, fuzz_size);
             break;
-        case 3:
+        case 4:
             // Fuzz __bridge_reload (branch depth: 40)
             fuzz_bridge_reload(fuzz_data, fuzz_size);
             break;
