@@ -246,7 +246,7 @@ static struct extdev_bridge *create_mock_bridge(void) {
     
     // Initialize the bridge structure
     bridge->edev.dev.type = &mock_device_type;
-    bridge->edev.dev.ifname = "mock_bridge0";
+    strcpy(bridge->edev.dev.ifname, "mock_bridge0");
     bridge->edev.dev.present = false;
     bridge->edev.dev.active = false;
     bridge->edev.dev.config_pending = false;
@@ -263,7 +263,7 @@ static struct extdev_bridge *create_mock_bridge(void) {
     bridge->n_failed = 0;
     
     // Initialize lists
-    INIT_LIST_HEAD(&bridge->edev.dev.users);
+    INIT_SAFE_LIST(&bridge->edev.dev.users);
     vlist_init(&bridge->members, avl_strcmp, NULL);
     
     return bridge;
