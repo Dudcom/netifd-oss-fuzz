@@ -52,13 +52,32 @@ static struct interface *g_mock_iface = NULL;
 static struct uci_section *g_mock_section = NULL;
 static struct extdev_bridge *g_mock_bridge = NULL;
 
+// Global fuzzing state
+static bool g_fuzzing_mode = false;
+
 // Initialize minimal netifd state for fuzzing
 static void init_netifd_for_fuzzing(void) {
     static bool initialized = false;
     if (initialized) return;
     
-    // Initialize minimal required state
-    // Note: This is a simplified initialization for fuzzing purposes
+    // Set fuzzing mode to disable ubus operations
+    g_fuzzing_mode = true;
+    
+    // Initialize the ubus context to prevent crashes during interface operations
+    // We create a minimal mock ubus context instead of connecting to the real ubus
+    extern struct ubus_context *ubus_ctx;
+    if (!ubus_ctx) {
+        ubus_ctx = calloc(1, sizeof(struct ubus_context));
+        if (ubus_ctx) {
+            // Initialize basic ubus context fields to prevent null pointer dereferences
+            ubus_ctx->sock.fd = -1; // Invalid fd to indicate not connected
+            ubus_ctx->local_id = 0xffffffff; // Invalid ID
+            
+            // Initialize the pending list to prevent crashes in ubus operations
+            INIT_LIST_HEAD(&ubus_ctx->pending);
+            INIT_LIST_HEAD(&ubus_ctx->requests);
+        }
+    }
     
     initialized = true;
 }
@@ -189,6 +208,13 @@ static void cleanup_mock_structures(void) {
         free(g_mock_bridge);
         g_mock_bridge = NULL;
     }
+    
+    // Clean up the mock ubus context if we created one
+    extern struct ubus_context *ubus_ctx;
+    if (g_fuzzing_mode && ubus_ctx) {
+        free(ubus_ctx);
+        ubus_ctx = NULL;
+    }
 }
 
 // Create blob data from fuzz input
@@ -257,6 +283,78 @@ static void fuzz_bridge_reload(const uint8_t *data, size_t size) {
     
     // Call the target function
     __bridge_reload(g_mock_bridge, attr);
+}
+
+// Stub ubus functions for fuzzing
+void netifd_ubus_add_interface(struct interface *iface) {
+    if (g_fuzzing_mode) {
+        // During fuzzing, just initialize the ubus object without actually registering it
+        struct ubus_object *obj = &iface->ubus;
+        obj->name = NULL; // Mark as unregistered
+        obj->type = NULL;
+        obj->methods = NULL;
+        obj->n_methods = 0;
+        return;
+    }
+    // This would be the original function call in non-fuzzing mode
+    // but since we're fuzzing, we never reach here
+}
+
+void netifd_ubus_remove_interface(struct interface *iface) {
+    if (g_fuzzing_mode) {
+        // During fuzzing, nothing to do
+        return;
+    }
+}
+
+void netifd_ubus_interface_event(struct interface *iface, bool up) {
+    if (g_fuzzing_mode) {
+        // During fuzzing, nothing to do
+        return;
+    }
+}
+
+void netifd_ubus_interface_notify(struct interface *iface, bool up) {
+    if (g_fuzzing_mode) {
+        // During fuzzing, nothing to do
+        return;
+    }
+}
+
+// Additional stub functions for fuzzing
+int system_if_up(struct device *dev) {
+    if (g_fuzzing_mode) {
+        return 0; // Success
+    }
+    return -1;
+}
+
+int system_if_down(struct device *dev) {
+    if (g_fuzzing_mode) {
+        return 0; // Success  
+    }
+    return -1;
+}
+
+int system_if_dump_info(struct device *dev, struct blob_buf *b) {
+    if (g_fuzzing_mode) {
+        return 0; // Success
+    }
+    return -1;
+}
+
+int system_if_dump_stats(struct device *dev, struct blob_buf *b) {
+    if (g_fuzzing_mode) {
+        return 0; // Success
+    }
+    return -1;
+}
+
+void netifd_ubus_device_notify(const char *event, struct blob_attr *data, int timeout) {
+    if (g_fuzzing_mode) {
+        // During fuzzing, nothing to do
+        return;
+    }
 }
 
 // Main fuzzing entry point
