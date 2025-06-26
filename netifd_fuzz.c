@@ -180,12 +180,38 @@ static struct uci_section *create_mock_uci_section(void) {
 
 // Create a mock bridge for bridge reload testing
 static struct extdev_bridge *create_mock_bridge(void) {
-    // Since extdev_bridge is incomplete, just allocate a small amount of memory
-    // This is a fuzzing mock - we don't need the full structure
-    struct extdev_bridge *bridge = calloc(1, 64); // Allocate some bytes
+    struct extdev_bridge *bridge = calloc(1, sizeof(struct extdev_bridge));
     if (!bridge) return NULL;
     
-    // Initialize basic fields - this is a simplified mock
+    // Create a mock device type with config_params
+    static struct device_type mock_dev_type = {0};
+    static struct uci_blob_param_list mock_config_params = {0};
+    
+    // Initialize the mock config params
+    mock_config_params.n_params = 0;
+    mock_config_params.params = NULL;
+    
+    // Initialize the mock device type
+    mock_dev_type.config_params = &mock_config_params;
+    mock_dev_type.name = "mock_bridge";
+    
+    // Initialize the bridge structure properly
+    bridge->edev.dev.type = &mock_dev_type;
+    bridge->edev.dev.ifname = "mock_bridge0";
+    bridge->edev.dev.present = false;
+    bridge->edev.dev.active = false;
+    bridge->edev.dev.config_pending = false;
+    
+    // Initialize lists and other fields
+    INIT_LIST_HEAD(&bridge->edev.dev.users);
+    bridge->config = NULL;
+    bridge->empty = false;
+    bridge->ifnames = NULL;
+    bridge->active = false;
+    bridge->force_active = false;
+    bridge->n_present = 0;
+    bridge->n_failed = 0;
+    
     return bridge;
 }
 
