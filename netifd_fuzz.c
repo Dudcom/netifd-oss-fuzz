@@ -63,8 +63,25 @@ static void init_netifd_for_fuzzing(void) {
     // Set fuzzing mode flag (though we removed the stub functions)
     g_fuzzing_mode = true;
     
-    // Note: Let the original netifd functions handle ubus initialization
-    // The system-dummy.o and ubus.o implementations should handle fuzzing gracefully
+    // Initialize ubus context for fuzzing - use a dummy path since we won't actually connect
+    // This will set ubus_ctx to NULL if connection fails, but that's expected in fuzzing
+    extern int netifd_ubus_init(const char *path);
+    netifd_ubus_init("/tmp/dummy_ubus_socket");
+    
+    // If ubus init failed (which is expected in fuzzing), create a minimal mock context
+    extern struct ubus_context *ubus_ctx;
+    if (!ubus_ctx) {
+        ubus_ctx = calloc(1, sizeof(struct ubus_context));
+        if (ubus_ctx) {
+            // Initialize basic ubus context fields to prevent null pointer dereferences
+            ubus_ctx->sock.fd = -1; // Invalid fd to indicate not connected
+            ubus_ctx->local_id = 0xffffffff; // Invalid ID
+            
+            // Initialize the pending list to prevent crashes in ubus operations
+            INIT_LIST_HEAD(&ubus_ctx->pending);
+            INIT_LIST_HEAD(&ubus_ctx->requests);
+        }
+    }
     
     initialized = true;
 }
@@ -196,7 +213,19 @@ static void cleanup_mock_structures(void) {
         g_mock_bridge = NULL;
     }
     
-    // Note: ubus_ctx cleanup is handled by the original netifd code
+    // Clean up the ubus context if we created it
+    extern struct ubus_context *ubus_ctx;
+    if (g_fuzzing_mode && ubus_ctx) {
+        // Check if this is our mock context (fd == -1) vs a real context
+        if (ubus_ctx->sock.fd == -1) {
+            free(ubus_ctx);
+            ubus_ctx = NULL;
+        } else {
+            // Let netifd_ubus_done handle real contexts
+            extern void netifd_ubus_done(void);
+            netifd_ubus_done();
+        }
+    }
 }
 
 // Create blob data from fuzz input
