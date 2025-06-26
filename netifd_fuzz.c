@@ -289,6 +289,11 @@ static void cleanup_mock_structures(void) {
     }
     
     if (g_mock_bridge) {
+        // Free the config blob that might have been allocated by __bridge_reload
+        if (g_mock_bridge->config) {
+            free(g_mock_bridge->config);
+            g_mock_bridge->config = NULL;
+        }
         free(g_mock_bridge);
         g_mock_bridge = NULL;
     }
@@ -366,14 +371,24 @@ static void fuzz_config_parse_interface(const uint8_t *data, size_t size) {
 }
 
 // Fuzz __bridge_reload function (branch depth: 40)  
+// Note: __bridge_reload calls blob_memdup() which allocates memory and stores it in ebr->config.
+// We need to carefully manage this memory to avoid leaks during fuzzing iterations.
 static void fuzz_bridge_reload(const uint8_t *data, size_t size) {
     if (!g_mock_bridge) return;
     
     struct blob_attr *attr = create_blob_from_fuzz_data(data, size);
     if (!attr) return;
     
+    // Save the current config pointer to free it later if it gets replaced
+    struct blob_attr *old_config = g_mock_bridge->config;
+    
     // Call the target function
     __bridge_reload(g_mock_bridge, attr);
+    
+    // Clean up the old config if it was replaced
+    if (old_config && old_config != g_mock_bridge->config) {
+        free(old_config);
+    }
 }
 
 // Note: Removed duplicate function definitions that are already defined in netifd source
@@ -425,6 +440,22 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             // Fuzz __bridge_reload (branch depth: 40)
             fuzz_bridge_reload(fuzz_data, fuzz_size);
             break;
+    }
+    
+    // Clean up any allocated memory from this test case
+    if (g_mock_bridge && g_mock_bridge->config) {
+        free(g_mock_bridge->config);
+        g_mock_bridge->config = NULL;
+    }
+    
+    // Reset other bridge state that might have been modified
+    if (g_mock_bridge) {
+        g_mock_bridge->ifnames = NULL; // This points into config data, so don't free separately
+        g_mock_bridge->empty = false;
+        g_mock_bridge->active = false;
+        g_mock_bridge->force_active = false;
+        g_mock_bridge->n_present = 0;
+        g_mock_bridge->n_failed = 0;
     }
     
     return 0;
