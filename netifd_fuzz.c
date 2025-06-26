@@ -314,23 +314,41 @@ static void cleanup_mock_structures(void) {
 }
 
 // Create blob data from fuzz input
+// This mimics exactly how netifd handles blob validation - it trusts the blob functions
 static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t size) {
-    if (size < 4) return NULL;
+    // Minimum size check - same as what netifd would expect
+    if (size < sizeof(struct blob_attr)) return NULL;
     
-    // Use the fuzz data directly as blob data with some safety checks
+    // Cast to blob_attr directly - this is exactly what netifd code does
     struct blob_attr *attr = (struct blob_attr *)data;
     
-    // Basic sanity check on blob header
-    if (blob_len(attr) > size - sizeof(struct blob_attr)) {
+    // Use the same validation pattern as the real netifd code:
+    // Only do basic bounds checking to prevent immediate buffer overflows
+    
+    // Check if the blob length makes sense using the actual blob_len() function
+    // but protect against it reading out of bounds first
+    size_t claimed_len = blob_len(attr);
+    size_t total_len = claimed_len + sizeof(struct blob_attr);
+    
+    // Basic overflow protection - this is the minimum netifd would need
+    if (total_len > size || total_len < sizeof(struct blob_attr)) {
         return NULL;
     }
     
+    // Let the blob functions and target functions handle everything else,
+    // just like the real netifd code does
     return attr;
 }
 
 // Fuzz config_parse_route function (branch depth: 246)
+// This mimics exactly how config.c validates UCI sections - it doesn't use blob data at all!
+// config_parse_route works with UCI sections, not blob attributes
 static void fuzz_config_parse_route(const uint8_t *data, size_t size) {
     if (!g_mock_section || size == 0) return;
+    
+    // Use the exact same pattern as config.c:
+    // config_parse_route() just takes a UCI section and calls uci_to_blob() internally
+    // It doesn't validate blob data - it validates UCI section data
     
     // Set section type for route parsing
     g_mock_section->type = "route";
@@ -338,27 +356,40 @@ static void fuzz_config_parse_route(const uint8_t *data, size_t size) {
     // Alternate between IPv4 and IPv6 routes based on data
     bool v6 = (data[0] % 2) == 1;
     
-    // Call the target function - this will parse route configuration
+    // Call the target function - it will do its own uci_to_blob() conversion and
+    // then call interface_ip_add_route() with the resulting blob, exactly like the real code
     config_parse_route(g_mock_section, v6);
 }
 
 // Fuzz proto_shell_parse_route_list function (branch depth: 247)
+// This mimics exactly how proto-shell.c validates and processes blob data
 static void fuzz_proto_shell_parse_route_list(const uint8_t *data, size_t size) {
     if (!g_mock_iface) return;
     
     struct blob_attr *attr = create_blob_from_fuzz_data(data, size);
     if (!attr) return;
     
+    // Use the exact same pattern as proto-shell.c:
+    // Just check for NULL attribute (line 603 in proto-shell.c: "if (!attr) goto out;")
+    // and let the function handle the rest
+    
     // Alternate between IPv4 and IPv6 routes based on data
     bool v6 = (data[0] % 2) == 1;
     
-    // Call the target function
+    // Call the target function - it will do its own validation using blobmsg_for_each_attr
+    // and blobmsg_type checks, exactly like the real code
     proto_shell_parse_route_list(g_mock_iface, attr, v6);
 }
 
 // Fuzz config_parse_interface function (branch depth: 44)
+// This mimics exactly how config.c validates UCI sections - it doesn't use blob data at all!
+// config_parse_interface works with UCI sections, not blob attributes
 static void fuzz_config_parse_interface(const uint8_t *data, size_t size) {
     if (!g_mock_section || size == 0) return;
+    
+    // Use the exact same pattern as config.c:
+    // config_parse_interface() just takes a UCI section and calls uci_to_blob() internally
+    // It doesn't validate blob data - it validates UCI section data
     
     // Alternate between alias and non-alias interfaces
     bool alias = (data[0] % 2) == 1;
@@ -366,11 +397,13 @@ static void fuzz_config_parse_interface(const uint8_t *data, size_t size) {
     // Update section type for interface parsing
     g_mock_section->type = "interface";
     
-    // Call the target function
+    // Call the target function - it will do its own uci_to_blob() conversion,
+    // exactly like the real code
     config_parse_interface(g_mock_section, alias);
 }
 
 // Fuzz __bridge_reload function (branch depth: 40)  
+// This mimics exactly how extdev.c validates and processes blob data
 // Note: __bridge_reload calls blob_memdup() which allocates memory and stores it in ebr->config.
 // We need to carefully manage this memory to avoid leaks during fuzzing iterations.
 static void fuzz_bridge_reload(const uint8_t *data, size_t size) {
@@ -379,10 +412,15 @@ static void fuzz_bridge_reload(const uint8_t *data, size_t size) {
     struct blob_attr *attr = create_blob_from_fuzz_data(data, size);
     if (!attr) return;
     
+    // Use the exact same pattern as __bridge_reload in extdev.c:
+    // It just checks "if (config)" and then immediately does blob_memdup() and blobmsg_parse()
+    // No other validation is done at the input level
+    
     // Save the current config pointer to free it later if it gets replaced
     struct blob_attr *old_config = g_mock_bridge->config;
     
-    // Call the target function
+    // Call the target function - it will do its own validation using blobmsg_parse
+    // and blobmsg_data/blobmsg_len functions, exactly like the real code
     __bridge_reload(g_mock_bridge, attr);
     
     // Clean up the old config if it was replaced
