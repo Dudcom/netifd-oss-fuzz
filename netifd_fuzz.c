@@ -94,12 +94,63 @@ static struct interface *create_mock_interface(void) {
 
 // Create a mock UCI section for config parsing
 static struct uci_section *create_mock_uci_section(void) {
+    // Allocate UCI context first if needed (needed for proper UCI initialization)
+    static struct uci_context *mock_ctx = NULL;
+    static struct uci_package *mock_pkg = NULL;
+    
+    if (!mock_ctx) {
+        mock_ctx = calloc(1, sizeof(struct uci_context));
+        if (!mock_ctx) return NULL;
+        
+        // Initialize the context with basic required fields
+        mock_ctx->root.next = &mock_ctx->root;
+        mock_ctx->root.prev = &mock_ctx->root;
+        mock_ctx->backends.next = &mock_ctx->backends;
+        mock_ctx->backends.prev = &mock_ctx->backends;
+        mock_ctx->delta_path.next = &mock_ctx->delta_path;
+        mock_ctx->delta_path.prev = &mock_ctx->delta_path;
+    }
+    
+    if (!mock_pkg) {
+        mock_pkg = calloc(1, sizeof(struct uci_package));
+        if (!mock_pkg) return NULL;
+        
+        // Initialize package element
+        mock_pkg->e.type = 2; // UCI_TYPE_PACKAGE
+        mock_pkg->e.name = "mock_package";
+        mock_pkg->e.list.next = &mock_pkg->e.list;
+        mock_pkg->e.list.prev = &mock_pkg->e.list;
+        
+        // Initialize sections list
+        mock_pkg->sections.next = &mock_pkg->sections;
+        mock_pkg->sections.prev = &mock_pkg->sections;
+        
+        // Initialize delta lists
+        mock_pkg->delta.next = &mock_pkg->delta;
+        mock_pkg->delta.prev = &mock_pkg->delta;
+        mock_pkg->saved_delta.next = &mock_pkg->saved_delta;
+        mock_pkg->saved_delta.prev = &mock_pkg->saved_delta;
+        
+        mock_pkg->ctx = mock_ctx;
+    }
+    
     struct uci_section *section = calloc(1, sizeof(struct uci_section));
     if (!section) return NULL;
     
-    // Initialize basic fields
-    section->type = "route";
+    // Initialize the embedded uci_element structure properly
+    section->e.type = 3; // UCI_TYPE_SECTION
     section->e.name = "mock_section";
+    section->e.list.next = &section->e.list;
+    section->e.list.prev = &section->e.list;
+    
+    // Initialize the options list
+    section->options.next = &section->options;
+    section->options.prev = &section->options;
+    
+    // Set basic fields
+    section->type = "interface"; // Changed from "route" to "interface" for interface parsing
+    section->package = mock_pkg;
+    section->anonymous = false;
     
     return section;
 }
@@ -128,6 +179,8 @@ static void cleanup_mock_structures(void) {
     }
     
     if (g_mock_section) {
+        // The section contains static references to mock_ctx and mock_pkg
+        // which are managed by create_mock_uci_section, so we only free the section itself
         free(g_mock_section);
         g_mock_section = NULL;
     }
@@ -156,6 +209,9 @@ static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t 
 // Fuzz config_parse_route function (branch depth: 246)
 static void fuzz_config_parse_route(const uint8_t *data, size_t size) {
     if (!g_mock_section || size == 0) return;
+    
+    // Set section type for route parsing
+    g_mock_section->type = "route";
     
     // Alternate between IPv4 and IPv6 routes based on data
     bool v6 = (data[0] % 2) == 1;
