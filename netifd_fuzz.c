@@ -27,8 +27,50 @@
 #include <libubox/blobmsg_json.h>
 #include <libubox/blob.h>
 
-// Forward declarations for incomplete types
-struct extdev_bridge;
+// Extdev structure definitions (from extdev.c)
+struct extdev_type {
+    struct device_type handler;
+    const char *name;
+    uint32_t peer_id;
+    struct ubus_subscriber ubus_sub;
+    bool subscribed;
+    struct ubus_event_handler obj_wait;
+    struct uci_blob_param_list *config_params;
+    char *config_strbuf;
+    struct uci_blob_param_list *info_params;
+    char *info_strbuf;
+    struct uci_blob_param_list *stats_params;
+    char *stats_strbuf;
+};
+
+struct extdev_device {
+    struct device dev;
+    struct extdev_type *etype;
+    const char *dep_name;
+    struct uloop_timeout retry;
+};
+
+struct extdev_bridge {
+    struct extdev_device edev;
+    device_state_cb set_state;
+    struct blob_attr *config;
+    bool empty;
+    struct blob_attr *ifnames;
+    bool active;
+    bool force_active;
+    struct uloop_timeout retry;
+    struct vlist_tree members;
+    int n_present;
+    int n_failed;
+};
+
+struct extdev_bridge_member {
+    struct vlist_node node;
+    struct extdev_bridge *parent_br;
+    struct device_user dev_usr;
+    bool present;
+    char *name;
+};
 
 // Function prototypes for the functions we want to fuzz (high branch depth targets)
 extern void config_parse_route(struct uci_section *s, bool v6);
@@ -183,27 +225,35 @@ static struct extdev_bridge *create_mock_bridge(void) {
     struct extdev_bridge *bridge = calloc(1, sizeof(struct extdev_bridge));
     if (!bridge) return NULL;
     
-    // Create a mock device type with config_params
-    static struct device_type mock_dev_type = {0};
+    // Create mock extdev_type with config_params
+    static struct extdev_type mock_extdev_type = {0};
     static struct uci_blob_param_list mock_config_params = {0};
+    static struct device_type mock_device_type = {0};
     
-    // Initialize the mock config params
+    // Initialize mock config params
     mock_config_params.n_params = 0;
     mock_config_params.params = NULL;
     
-    // Initialize the mock device type
-    mock_dev_type.config_params = &mock_config_params;
-    mock_dev_type.name = "mock_bridge";
+    // Initialize mock device type
+    mock_device_type.config_params = &mock_config_params;
+    mock_device_type.name = "mock_bridge";
     
-    // Initialize the bridge structure properly
-    bridge->edev.dev.type = &mock_dev_type;
+    // Initialize mock extdev_type
+    mock_extdev_type.handler = mock_device_type;
+    mock_extdev_type.name = "mock_bridge";
+    mock_extdev_type.config_params = &mock_config_params;
+    mock_extdev_type.subscribed = false;
+    
+    // Initialize the bridge structure
+    bridge->edev.dev.type = &mock_device_type;
     bridge->edev.dev.ifname = "mock_bridge0";
     bridge->edev.dev.present = false;
     bridge->edev.dev.active = false;
     bridge->edev.dev.config_pending = false;
+    bridge->edev.etype = &mock_extdev_type;
+    bridge->edev.dep_name = NULL;
     
-    // Initialize lists and other fields
-    INIT_LIST_HEAD(&bridge->edev.dev.users);
+    // Initialize bridge-specific fields
     bridge->config = NULL;
     bridge->empty = false;
     bridge->ifnames = NULL;
@@ -211,6 +261,10 @@ static struct extdev_bridge *create_mock_bridge(void) {
     bridge->force_active = false;
     bridge->n_present = 0;
     bridge->n_failed = 0;
+    
+    // Initialize lists
+    INIT_LIST_HEAD(&bridge->edev.dev.users);
+    vlist_init(&bridge->members, avl_strcmp, NULL);
     
     return bridge;
 }
