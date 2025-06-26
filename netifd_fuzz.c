@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <endian.h>
 
 // Include netifd headers
 #include "netifd.h"
@@ -322,20 +323,25 @@ static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t 
     // Cast to blob_attr directly - this is exactly what netifd code does
     struct blob_attr *attr = (struct blob_attr *)data;
     
-    // Use the same validation pattern as the real netifd code:
-    // Only do basic bounds checking to prevent immediate buffer overflows
+    // CRITICAL: Do NOT call blob_len() or any blob functions until we validate
+    // the basic structure manually, since blob_len() can read out of bounds
     
-    // Check if the blob length makes sense using the actual blob_len() function
-    // but protect against it reading out of bounds first
-    size_t claimed_len = blob_len(attr);
-    size_t total_len = claimed_len + sizeof(struct blob_attr);
+    // Manually read the length field from the blob header (first 4 bytes)
+    // This is what blob_len() does internally, but we do it safely
+    uint32_t raw_len;
+    memcpy(&raw_len, data, sizeof(uint32_t));
+    
+    // Convert from network byte order (big endian) to host byte order
+    // This is the same conversion blob_len() does internally
+    uint32_t blob_data_len = be32toh(raw_len);
+    size_t total_len = blob_data_len + sizeof(struct blob_attr);
     
     // Basic overflow protection - this is the minimum netifd would need
     if (total_len > size || total_len < sizeof(struct blob_attr)) {
         return NULL;
     }
     
-    // Let the blob functions and target functions handle everything else,
+    // Now it's safe to let the blob functions handle everything else,
     // just like the real netifd code does
     return attr;
 }
