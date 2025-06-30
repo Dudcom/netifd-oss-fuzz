@@ -89,6 +89,7 @@ static void fuzz_interface_ip_add_route(const uint8_t *data, size_t size);
 static void fuzz_iprule_add(const uint8_t *data, size_t size);
 static void fuzz_config_parse_interface(const uint8_t *data, size_t size);
 static void fuzz_bridge_reload(const uint8_t *data, size_t size);
+static void fuzz_bonding_create(const uint8_t *data, size_t size);
 static void cleanup_mock_structures(void);
 
 // Global mock structures for testing
@@ -126,6 +127,11 @@ static void init_netifd_for_fuzzing(void) {
             INIT_LIST_HEAD(&ubus_ctx->requests);
         }
     }
+    
+    // Initialize device types that we want to fuzz
+    // This ensures bonding device type is available for fuzzing
+    extern void bonding_device_type_init(void);
+    bonding_device_type_init();
     
     initialized = true;
 }
@@ -491,8 +497,195 @@ static void fuzz_bridge_reload(const uint8_t *data, size_t size) {
     }
 }
 
-// Note: Removed duplicate function definitions that are already defined in netifd source
-// The original functions from system-dummy.o and ubus.o will be used instead
+// Fuzz bonding device creation through the realistic device_create entry point
+// This targets the bonding_create function through device_create, which is called
+// from config_init_devices when parsing UCI "device" sections of type "bonding"
+static void fuzz_bonding_create(const uint8_t *data, size_t size) {
+    if (size < 8) return;
+    
+    // Create a structured blob for bonding configuration based on fuzz data
+    static struct blob_buf bonding_buf;
+    blob_buf_init(&bonding_buf, 0);
+    
+    size_t offset = 0;
+    
+    // Add basic bonding configuration fields using fuzz data
+    if (offset < size) {
+        // Use fuzz data to select bonding policy
+        uint8_t policy_idx = data[offset] % 7; // 7 bonding modes available
+        const char *policies[] = {
+            "balance-rr", "active-backup", "balance-xor", "broadcast",
+            "802.3ad", "balance-tlb", "balance-alb"
+        };
+        blobmsg_add_string(&bonding_buf, "policy", policies[policy_idx]);
+        offset++;
+    }
+    
+    // Add ports array
+    if (offset + 1 < size) {
+        void *ports_array = blobmsg_open_array(&bonding_buf, "ports");
+        
+        // Add 1-4 ports based on fuzz data
+        uint8_t num_ports = 1 + (data[offset] % 4);
+        offset++;
+        
+        for (int i = 0; i < num_ports && offset < size; i++) {
+            char port_name[16];
+            snprintf(port_name, sizeof(port_name), "eth%d", i);
+            blobmsg_add_string(&bonding_buf, NULL, port_name);
+        }
+        
+        blobmsg_close_array(&bonding_buf, ports_array);
+    }
+    
+    // Add other bonding parameters based on remaining fuzz data
+    if (offset + 4 <= size) {
+        uint32_t min_links;
+        memcpy(&min_links, data + offset, sizeof(uint32_t));
+        blobmsg_add_u32(&bonding_buf, "min_links", min_links % 8); // Reasonable range
+        offset += 4;
+    }
+    
+    if (offset + 4 <= size) {
+        uint32_t monitor_interval;
+        memcpy(&monitor_interval, data + offset, sizeof(uint32_t));
+        blobmsg_add_u32(&bonding_buf, "monitor_interval", monitor_interval % 1000);
+        offset += 4;
+    }
+    
+    if (offset < size) {
+        blobmsg_add_bool(&bonding_buf, "all_ports_active", data[offset] & 1);
+        offset++;
+    }
+    
+    if (offset < size) {
+        blobmsg_add_bool(&bonding_buf, "use_carrier", data[offset] & 1);
+        offset++;
+    }
+    
+    // Add xmit_hash_policy if balance-xor, balance-tlb, or 802.3ad
+    if (offset < size) {
+        uint8_t hash_policy_idx = data[offset] % 4;
+        const char *hash_policies[] = {
+            "layer2", "layer2+3", "layer3+4", "encap2+3"
+        };
+        blobmsg_add_string(&bonding_buf, "xmit_hash_policy", hash_policies[hash_policy_idx]);
+        offset++;
+    }
+    
+    // Add primary port selection
+    if (offset < size) {
+        char primary_port[16];
+        snprintf(primary_port, sizeof(primary_port), "eth%d", data[offset] % 4);
+        blobmsg_add_string(&bonding_buf, "primary", primary_port);
+        offset++;
+    }
+    
+    // Add additional bonding parameters based on remaining fuzz data
+    if (offset + 4 <= size) {
+        uint32_t ad_actor_sys_prio;
+        memcpy(&ad_actor_sys_prio, data + offset, sizeof(uint32_t));
+        blobmsg_add_u32(&bonding_buf, "ad_actor_sys_prio", ad_actor_sys_prio % 65536);
+        offset += 4;
+    }
+    
+    if (offset + 4 <= size) {
+        uint32_t packets_per_port;
+        memcpy(&packets_per_port, data + offset, sizeof(uint32_t));
+        blobmsg_add_u32(&bonding_buf, "packets_per_port", packets_per_port % 100);
+        offset += 4;
+    }
+    
+    if (offset + 4 <= size) {
+        uint32_t updelay;
+        memcpy(&updelay, data + offset, sizeof(uint32_t));
+        blobmsg_add_u32(&bonding_buf, "updelay", updelay % 1000);
+        offset += 4;
+    }
+    
+    if (offset + 4 <= size) {
+        uint32_t downdelay;
+        memcpy(&downdelay, data + offset, sizeof(uint32_t));
+        blobmsg_add_u32(&bonding_buf, "downdelay", downdelay % 1000);
+        offset += 4;
+    }
+    
+    if (offset < size) {
+        const char *primary_reselect_opts[] = {"always", "better", "failure"};
+        uint8_t reselect_idx = data[offset] % 3;
+        blobmsg_add_string(&bonding_buf, "primary_reselect", primary_reselect_opts[reselect_idx]);
+        offset++;
+    }
+    
+    if (offset < size) {
+        const char *failover_mac_opts[] = {"none", "active", "follow"};
+        uint8_t failover_idx = data[offset] % 3;
+        blobmsg_add_string(&bonding_buf, "failover_mac", failover_mac_opts[failover_idx]);
+        offset++;
+    }
+    
+    // Add ARP monitoring configuration
+    if (offset < size && (data[offset] & 1)) {
+        blobmsg_add_string(&bonding_buf, "monitor_mode", "arp");
+        
+        // Add ARP targets array
+        if (offset + 1 < size) {
+            void *arp_targets = blobmsg_open_array(&bonding_buf, "arp_target");
+            blobmsg_add_string(&bonding_buf, NULL, "192.168.1.1");
+            blobmsg_add_string(&bonding_buf, NULL, "192.168.1.254");
+            blobmsg_close_array(&bonding_buf, arp_targets);
+        }
+        
+        if (offset + 1 < size) {
+            blobmsg_add_bool(&bonding_buf, "arp_all_targets", data[offset + 1] & 1);
+        }
+        
+        offset += 2;
+    }
+    
+    // Get the bonding device type
+    extern struct device_type *device_type_get(const char *name);
+    struct device_type *bonding_type = device_type_get("bonding");
+    if (!bonding_type) {
+        // If bonding type is not registered, we can't test it
+        return;
+    }
+    
+    // Create a unique bonding device name for each test
+    static int bonding_counter = 0;
+    char bonding_name[32];
+    snprintf(bonding_name, sizeof(bonding_name), "bond%d", bonding_counter++);
+    
+    // Call device_create which will invoke bonding_create through the function pointer
+    // This is the exact same path used by config_init_devices() in config.c
+    extern struct device *device_create(const char *name, struct device_type *type, struct blob_attr *config);
+    struct device *bonding_dev = device_create(bonding_name, bonding_type, blob_data(bonding_buf.head));
+    
+    // Clean up the created device to prevent resource leaks
+    if (bonding_dev) {
+        // Use the device's own cleanup mechanism
+        extern void device_cleanup(struct device *dev);
+        
+        // Mark it as not current to allow cleanup
+        bonding_dev->current_config = false;
+        
+        // Set it as not present to trigger cleanup
+        extern void device_set_present(struct device *dev, bool state);
+        device_set_present(bonding_dev, false);
+        
+        // Call the bonding-specific free function if available
+        if (bonding_dev->type && bonding_dev->type->free) {
+            bonding_dev->type->free(bonding_dev);
+        } else {
+            // Fallback cleanup
+            if (bonding_dev->config) {
+                free(bonding_dev->config);
+                bonding_dev->config = NULL;
+            }
+            device_cleanup(bonding_dev);
+        }
+    }
+}
 
 // Main fuzzing entry point
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -519,7 +712,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size < 2) return 0;
     
     // Use first byte to determine which high-complexity function to fuzz
-    uint8_t strategy = data[0] % 5;
+    uint8_t strategy = data[0] % 6;
     const uint8_t *fuzz_data = data + 1;
     size_t fuzz_size = size - 1;
     
@@ -543,6 +736,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         case 4:
             // Fuzz __bridge_reload (branch depth: 40)
             fuzz_bridge_reload(fuzz_data, fuzz_size);
+            break;
+        case 5:
+            // Fuzz bonding_create through device_create entry point
+            fuzz_bonding_create(fuzz_data, fuzz_size);
             break;
     }
     

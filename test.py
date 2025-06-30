@@ -9,22 +9,18 @@ class CFunctionParser:
         self.fucn_hash_map = {}
         
     def get_c_files(self, path):
-        """Get all C/C++ files from a path (file or directory)"""
         c_extensions = ['.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hxx']
         
         if os.path.isfile(path):
-            # Check if it's a C/C++ file
             _, ext = os.path.splitext(path)
             if ext.lower() in c_extensions:
                 return [path]
             else:
                 print(f"Warning: '{path}' doesn't appear to be a C/C++ file")
-                return [path]  # Process it anyway
+                return [path]  
         elif os.path.isdir(path):
-            # Recursively find all C/C++ files in the directory
             c_files = []
             for ext in c_extensions:
-                # Use recursive glob to find files
                 pattern = os.path.join(path, '**', f'*{ext}')
                 c_files.extend(glob.glob(pattern, recursive=True))
             
@@ -39,12 +35,10 @@ class CFunctionParser:
             return []
     
     def process_files(self, file_paths):
-        """Process multiple files and combine results"""
         for file_path in file_paths:
             print(f"Processing: {file_path}")
             file_functions = self.find_functions_in_file(file_path)
             
-            # Add file path information to each function
             for func in file_functions:
                 func['file_path'] = file_path
                 
@@ -61,7 +55,6 @@ class CFunctionParser:
         return code
     
     def find_functions_in_file(self, filename):
-        """Find functions in a single file"""
         functions = []
         
         try:
@@ -341,7 +334,9 @@ class CFunctionParser:
         output = ['"functions":']
         for func in self.all_functions: 
             val = self.find_branch_depth(func['name']) 
-            if( (("readrecv_message" in func['full_function']) or ("parse" in func['name']) or ("read" in func['full_function']) or ("ock_recvmsg" in func['full_function'])) and val > a):
+            keywords = [ "parse", "handle", "read","search","recv","send","token","match"]
+            keyfunction = ["readrecv_message", "read", "ock_recvmsg"]
+            if( (any(keyword in func['name'] for keyword in keywords) or any(keyfunction in func['full_function'] for keyfunction in keyfunction)) and val >= 2*a):
                 print(func['name'], val)
                 output.append(f'- "name": "{func["name"]}"')
                 output.append(f'  "file": "{func.get("file_path", "unknown")}"')
@@ -352,6 +347,7 @@ class CFunctionParser:
                         output.append(f'    "type": "{param["type"]}"')
                 else:
                     output.append('  "params": []')
+                    
                 
                 output.append(f'  "return_type": "{func["return_type"]}"')
                 output.append(f'  "signature": "{func["signature"]}"')
@@ -379,16 +375,12 @@ class CFunctionParser:
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python c_function_parser.py <file_or_folder_path>")
-        print("Examples:")
-        print("  python c_function_parser.py main.c")
-        print("  python c_function_parser.py /path/to/source/folder")
+        print("test.py <file_or_folder_path>")
         return
     
     input_path = sys.argv[1]
     parser = CFunctionParser()
     
-    # Get all C/C++ files from the input path
     c_files = parser.get_c_files(input_path)
     
     if not c_files:
@@ -397,11 +389,9 @@ def main():
     
     print(f"\nProcessing {len(c_files)} file(s)...")
     
-    # Process all files
     all_functions = parser.process_files(c_files)
     print(f"\nTotal functions found: {len(all_functions)}")
     
-    # Save results
     parser.save_to_file(input_path)
     print("\nDone")
 
