@@ -82,7 +82,6 @@ extern enum dev_change_type __bridge_reload(struct extdev_bridge *ebr, struct bl
 static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t size);
 static void fuzz_bonding_create(const uint8_t *data, size_t size);
 
-// Forward declarations for structure creation functions
 static struct interface *create_fuzzed_interface(const uint8_t *data, size_t size, size_t *offset);
 static struct uci_section *create_fuzzed_uci_section(const uint8_t *data, size_t size, size_t *offset);
 static struct extdev_bridge *create_fuzzed_bridge(const uint8_t *data, size_t size, size_t *offset);
@@ -116,21 +115,19 @@ static void init_netifd_for_fuzzing(void) {
     initialized = true;
 }
 
-// Helper to create valid blob attributes from fuzz data
 static struct blob_attr *create_valid_blob_attr(const uint8_t *data, size_t size) {
     if (size < 4) return NULL;
     
     static struct blob_buf attr_buf;
     blob_buf_init(&attr_buf, 0);
     
-    // Create a simple valid blob structure
     size_t offset = 0;
-    while (offset < size && offset < 64) { // Limit to reasonable size
+    while (offset < size && offset < 64) {
         uint8_t field_type = data[offset] % 8;
         offset++;
         
         switch (field_type) {
-            case 0: // String field
+            case 0:
                 if (offset < size) {
                     char key[16], value[32];
                     snprintf(key, sizeof(key), "key%d", data[offset] % 10);
@@ -175,20 +172,14 @@ static struct blob_attr *create_valid_blob_attr(const uint8_t *data, size_t size
     return blob_data(attr_buf.head);
 }
 
-// Add UCI options to sections - simplified to avoid AFL++ list issues
 static void add_uci_options_from_fuzz(struct uci_section *section, const uint8_t *data, size_t size) {
     if (size < 4) return;
     
-    // For AFL++ build, keep it simple and just set the section type
-    // The parsing functions will handle missing options gracefully
     (void)data; // Suppress unused parameter warning
     (void)size;
     
-    // Just ensure the section has the right type - the parsers are designed
-    // to handle missing or malformed UCI options gracefully
 }
 
-// More flexible strategy selection
 static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
     if (size < 4) return;
     
@@ -197,7 +188,7 @@ static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
     size_t fuzz_size = size - 1;
     
     switch (strategy) {
-        case 0: // Simple route parsing
+        case 0:
         case 1: {
             if (fuzz_size >= 8) {
                 size_t offset = 0;
@@ -212,7 +203,7 @@ static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
             }
             break;
         }
-        case 2: // Interface parsing
+        case 2:
         case 3: {
             if (fuzz_size >= 8) {
                 size_t offset = 0;
@@ -227,7 +218,7 @@ static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
             }
             break;
         }
-        case 4: // Route addition with valid blob
+        case 4:
         case 5: {
             if (fuzz_size >= 8) {
                 size_t offset = 0;
@@ -243,7 +234,7 @@ static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
             }
             break;
         }
-        case 6: // Rule addition with valid blob
+        case 6:
         case 7: {
             if (fuzz_size >= 4) {
                 struct blob_attr *attr = create_valid_blob_attr(fuzz_data, fuzz_size);
@@ -254,7 +245,7 @@ static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
             }
             break;
         }
-        case 8: // Bridge reload
+        case 8:
         case 9: {
             if (fuzz_size >= 8) {
                 size_t offset = 0;
@@ -272,8 +263,6 @@ static void fuzz_with_reduced_requirements(const uint8_t *data, size_t size) {
     }
 }
 
-// Enhanced structure creation with fuzz data control
-
 static struct interface *create_fuzzed_interface(const uint8_t *data, size_t size, size_t *offset) {
     if (*offset + sizeof(struct interface) > size) return NULL;
     
@@ -283,8 +272,6 @@ static struct interface *create_fuzzed_interface(const uint8_t *data, size_t siz
     memcpy(iface, data + *offset, sizeof(struct interface));
     *offset += sizeof(struct interface);
     
-    // Override critical infrastructure to prevent crashes
-    // but let fuzzer control all business logic fields
     static const char *safe_names[] = {"eth0", "wlan0", "br0", "fuzz_if"};
     iface->name = safe_names[((uintptr_t)iface->name) % 4];
     
@@ -347,7 +334,6 @@ static struct uci_section *create_fuzzed_uci_section(const uint8_t *data, size_t
     };
     static const char *safe_names[] = {"lan", "wan", "wlan", "test_section"};
     
-    // Cast away const for compatibility with UCI structures
     section->type = (char *)safe_types[((uintptr_t)section->type) % 9];
     section->e.name = (char *)safe_names[((uintptr_t)section->e.name) % 4];
     section->package = mock_pkg;
@@ -569,7 +555,7 @@ static void fuzz_cleanup(void) {
 //     return 0;
 // }
 
-// Original blob creation function for backward compatibility
+
 static struct blob_attr *create_blob_from_fuzz_data(const uint8_t *data, size_t size) {
     static struct blob_buf fuzz_buf;
     void *array_cookie;
