@@ -762,7 +762,7 @@ static struct device_type bonding_device_type = {
 	.free = bonding_free,
 };
 
-static void __init bonding_device_type_init(void)
+void __init bonding_device_type_init(void)
 {
 	device_type_add(&bonding_device_type);
 }
