@@ -104,6 +104,7 @@ mkdir -p build
 cd build
 cmake .. -DCMAKE_INSTALL_PREFIX="$DEPS_DIR/install" \
          -DCMAKE_C_FLAGS="$CFLAGS" \
+         -DCMAKE_EXE_LINKER_FLAGS="-lrt" \
          -DBUILD_LUA=OFF \
          -DBUILD_EXAMPLES=OFF \
          -DBUILD_TESTS=OFF \

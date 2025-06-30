@@ -332,7 +332,7 @@ netifd_kill_processes(void)
 		netifd_kill_process(proc);
 }
 
-int main(int argc, char **argv)
+int main_old(int argc, char **argv)
 {
 	const char *socket = NULL;
 	int ch;
